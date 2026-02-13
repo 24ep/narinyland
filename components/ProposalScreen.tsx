@@ -5,15 +5,17 @@ import Logo from './Logo';
 
 interface ProposalScreenProps {
   onAccept: () => void;
+  onStepChange?: (step: number) => void;
   questions: {
-    q1: string;
-    q2: string;
+    questions: string[];
+    progress?: number;
   };
   appName: string;
 }
 
-const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, questions, appName }) => {
-  const [step, setStep] = useState(1);
+const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, onStepChange, questions, appName }) => {
+  const initialStep = Math.min((questions.progress || 0) + 1, questions.questions.length);
+  const [step, setStep] = useState(initialStep);
   const [noButtonPos, setNoButtonPos] = useState({ x: 0, y: 0, rotate: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const noButtonRef = useRef<HTMLButtonElement>(null);
@@ -58,10 +60,13 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, questions, ap
   }, [moveButton]);
 
   const handleYes = () => {
-    if (step === 1) {
-      setStep(2);
+    if (step < questions.questions.length) {
+      const nextStep = step + 1;
+      setStep(nextStep);
       setNoButtonPos({ x: 0, y: 0, rotate: 0 });
+      if (onStepChange) onStepChange(step); // 'step' is the current index (1-based) we just finished
     } else {
+      if (onStepChange) onStepChange(questions.questions.length);
       onAccept();
     }
   };
@@ -69,7 +74,7 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, questions, ap
   return (
     <div 
       ref={containerRef}
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-br from-pink-200 via-red-100 to-pink-200 overflow-hidden"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm overflow-hidden"
     >
       {/* Background decoration */}
       <div className="absolute inset-0 pointer-events-none">
@@ -84,11 +89,11 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, questions, ap
               x: (Math.random() - 0.5) * 600
             }}
             transition={{ 
-              duration: 3 + Math.random() * 5, 
+              duration: 4 + Math.random() * 6, 
               repeat: Infinity, 
               delay: Math.random() * 5 
             }}
-            className="absolute text-red-300 text-3xl"
+            className="absolute text-pink-300/60 text-4xl filter drop-shadow-lg"
             style={{ 
               left: `${Math.random() * 100}%`, 
               top: `${Math.random() * 100}%` 
@@ -104,8 +109,9 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, questions, ap
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: -30 }}
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
-          className="text-center z-10 p-6 md:p-10 bg-white/85 backdrop-blur-3xl rounded-[4rem] shadow-[0_40px_80px_rgba(0,0,0,0.15)] border-[12px] border-white max-w-2xl w-[95%] flex flex-col items-center"
+          className="text-center z-10 p-8 md:p-12 bg-white/70 backdrop-blur-xl rounded-[3rem] shadow-[0_20px_60px_rgba(0,0,0,0.3)] border border-white/60 max-w-2xl w-[90%] flex flex-col items-center relative overflow-hidden"
         >
+          <div className="absolute inset-0 bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
           {/* Logo prominently displayed */}
           <Logo size={240} className="mb-6" title={appName} />
 
@@ -118,11 +124,11 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, questions, ap
             transition={{ repeat: Infinity, duration: 2.2, ease: "easeInOut" }}
             className="text-6xl mb-6 select-none"
           >
-            {step === 1 ? '🌹' : '🤴'}
+            {step === 1 ? '🌹' : step === questions.questions.length ? '🤴' : '✨'}
           </motion.div>
           
-          <h1 className="text-2xl md:text-4xl font-pacifico text-red-600 mb-8 px-4 leading-tight drop-shadow-sm select-none">
-            {step === 1 ? questions.q1 : questions.q2}
+          <h1 className="text-3xl md:text-5xl font-outfit font-black text-red-600 mb-8 px-4 leading-tight drop-shadow-sm select-none tracking-tight">
+            {questions.questions[step - 1]}
           </h1>
           
           <div className="flex flex-col md:flex-row items-center justify-center gap-6 md:gap-10 relative min-h-[140px] w-full px-4">
@@ -169,7 +175,7 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, questions, ap
       </AnimatePresence>
 
       <footer className="absolute bottom-10 text-red-500/50 font-bold tracking-[0.3em] text-sm md:text-base italic uppercase select-none">
-        {step === 1 ? `Welcome to ${appName}` : 'A truly handsome choice'}
+        {step === 1 ? `Welcome to ${appName}` : `Step ${step} of ${questions.questions.length}`}
       </footer>
 
       <style>{`

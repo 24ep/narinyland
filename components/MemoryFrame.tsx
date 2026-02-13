@@ -11,6 +11,7 @@ interface MemoryFrameProps {
   username?: string;
   viewMode: 'all' | 'public' | 'private';
   onViewModeChange: (mode: 'all' | 'public' | 'private') => void;
+  variant?: 'default' | 'sky';
 }
 
 const MemoryFrame: React.FC<MemoryFrameProps> = ({ 
@@ -20,7 +21,8 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
   source = 'manual', 
   username,
   viewMode,
-  onViewModeChange
+  onViewModeChange,
+  variant = 'default'
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
@@ -29,28 +31,12 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isHovering, setIsHovering] = useState(false);
 
-  // Helper to detect and transform Instagram post links to direct image URLs
+  // Helper to get the display URL — Instagram post URLs go through our server proxy
   const getDisplayUrl = (url: string) => {
-    if (!url) return "https://via.placeholder.com/600x600?text=No+Image";
-    
-    // If it's a direct CDN link (e.g. from the API fetch), use it directly
-    if (url.includes('cdninstagram.com') || url.includes('fbcdn.net')) {
-      return url;
-    }
-
-    // Manual manual 'p' link fallback transformation
-    if (url.includes('instagram.com/p/') || url.includes('instagram.com/reel/') || url.includes('instagram.com/tv/')) {
-      try {
-        const urlObj = new URL(url);
-        // Remove trailing slash if present to normalize, then add the endpoint
-        const cleanPath = urlObj.pathname.endsWith('/') ? urlObj.pathname.slice(0, -1) : urlObj.pathname;
-        return `https://www.instagram.com${cleanPath}/media/?size=l`;
-      } catch (e) {
-        // Fallback for malformed URLs
-        const baseUrl = url.split('?')[0];
-        const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-        return `${cleanBase}/media/?size=l`;
-      }
+    if (!url) return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600'%3E%3Crect width='600' height='600' fill='%23f9fafb'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239ca3af' font-size='16'%3ENo Image%3C/text%3E%3C/svg%3E";
+    // If it's an Instagram post URL, proxy through our backend to get the actual image
+    if (/instagram\.com\/(p|reel|tv)\//.test(url)) {
+      return `/api/instagram/image?url=${encodeURIComponent(url)}`;
     }
     return url;
   };
@@ -128,14 +114,118 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
     setIsZoomed(true);
   };
 
+  /* Floating Animation Logic for Sky Variant */
+  const floatingPositions = useMemo(() => {
+    return filteredItems.map(() => ({
+      top: `${5 + Math.random() * 40}%`, // Top 5-45% of screen
+      left: `${5 + Math.random() * 90}%`, // 5-95% width
+      duration: 10 + Math.random() * 20,
+      delay: Math.random() * 5,
+      scale: 0.5 + Math.random() * 0.5
+    }));
+  }, [filteredItems.length]); // Regenerate only when count changes
+
+  // The original skyPos and its useEffect are no longer needed as each item will have its own random position and animation.
+  // const [skyPos, setSkyPos] = useState({ top: '10%', left: '10%' });
+  // useEffect(() => {
+  //   if (variant === 'sky') {
+  //     setSkyPos({
+  //       top: `${5 + Math.random() * 30}%`,
+  //       left: `${5 + Math.random() * 75}%`
+  //     });
+  //   }
+  // }, [variant]);
+
   if (!isVisible) return null;
+
+  if (variant === 'sky') {
+    return (
+      <>
+        {/* Sky Container - Floating Scattered Images */}
+        <div className="fixed inset-0 z-20 pointer-events-none overflow-hidden h-[60vh]">
+           {filteredItems.map((item, idx) => {
+             const pos = floatingPositions[idx] || { top: '10%', left: '10%', duration: 10, delay: 0, scale: 1 };
+             return (
+               <motion.div
+                 key={`${item.url}-${idx}`}
+                 className="absolute w-24 h-24 md:w-32 md:h-32 pointer-events-auto cursor-zoom-in"
+                 style={{ top: pos.top, left: pos.left }}
+                 initial={{ opacity: 0, scale: 0 }}
+                 animate={{ 
+                   opacity: 1, 
+                   scale: pos.scale,
+                   y: [0, -20, 0, 20, 0],
+                   x: [0, 15, 0, -15, 0],
+                   rotate: [0, 5, 0, -5, 0]
+                 }}
+                 transition={{ 
+                   duration: pos.duration, 
+                   delay: pos.delay,
+                   repeat: Infinity, 
+                   ease: "easeInOut" 
+                 }}
+                 onClick={() => handleZoom(item.url)}
+                 whileHover={{ scale: 1.2, zIndex: 50, rotate: 0 }}
+               >
+                 <div className="w-full h-full p-2 bg-white/30 backdrop-blur-md rounded-2xl border border-white/40 shadow-lg transform rotate-[-2deg] hover:rotate-0 transition-all duration-300">
+                    <img 
+                      src={getDisplayUrl(item.url)} 
+                      className="w-full h-full object-cover rounded-xl"
+                      alt={`Memory ${idx}`}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                          e.currentTarget.src = "https://images.unsplash.com/photo-1516589174184-c6848463ea2a?q=80&w=800&auto=format&fit=crop";
+                      }}
+                    />
+                 </div>
+               </motion.div>
+             );
+           })}
+        </div>
+
+        {/* Zoom Modal (Shared) */}
+        <AnimatePresence>
+          {isZoomed && zoomedImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[150] flex items-center justify-center bg-black/98 backdrop-blur-xl p-6"
+              onClick={() => setIsZoomed(false)}
+            >
+              <button className="absolute top-10 right-10 text-white text-6xl font-light hover:text-pink-400 transition-colors">&times;</button>
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0, y: 50 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.8, opacity: 0, y: 50 }}
+                className="relative max-w-6xl max-h-[85vh] group"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img 
+                  src={zoomedImage} 
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                     e.currentTarget.src = "https://images.unsplash.com/photo-1516589174184-c6848463ea2a?q=80&w=800&auto=format&fit=crop";
+                  }}
+                  alt="Zoomed Memory" 
+                  className="w-full h-full object-contain rounded-3xl shadow-[0_0_100px_rgba(236,72,153,0.2)] border-4 border-white/10"
+                />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
 
   return (
     <>
-      <div className="relative w-full max-w-4xl mx-auto px-4 z-10 flex flex-col items-center">
-        <div className="w-full flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+      <motion.div 
+        className={'relative w-full max-w-4xl mx-auto px-4 z-10 flex flex-col items-center'}
+      >
+        <div className={'w-full flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6'}>
            <div className="flex flex-col">
-              <h2 className="font-pacifico text-3xl text-pink-500 drop-shadow-sm">Our Memories</h2>
+              <h2 className={'text-3xl font-pacifico text-pink-500 drop-shadow-sm'}>Our Memories</h2>
               {(source === 'instagram' || (filteredItems[currentIndex] && isInstagramLink(filteredItems[currentIndex].url))) && (
                  <motion.div 
                    initial={{ opacity: 0, x: -10 }}
@@ -152,7 +242,7 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
               )}
            </div>
 
-           <div className="flex bg-white/40 backdrop-blur-xl p-1.5 rounded-2xl shadow-inner border border-white">
+           <div className={`flex bg-white/40 backdrop-blur-xl p-1.5 rounded-2xl shadow-inner border border-white`}>
               <button
                 onClick={() => onViewModeChange('all')}
                 className={`px-5 py-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${
@@ -196,7 +286,7 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="w-full max-w-md mx-auto"
+                className={'w-full max-w-md mx-auto'}
               >
                 <div className="relative bg-white p-3 pb-16 shadow-[0_25px_60px_rgba(0,0,0,0.12)] border-8 border-white rounded-sm transform rotate-[-2deg] hover:rotate-0 transition-transform duration-700">
                   <div 
@@ -240,7 +330,7 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
                   </div>
 
                   <div className="absolute bottom-5 left-0 w-full text-center">
-                    <p className="font-pacifico text-pink-500 text-2xl tracking-wide">
+                    <p className={`font-pacifico text-pink-500 text-2xl tracking-wide`}>
                        {viewMode === 'private' ? 'Secret Moments' : 'Everlasting Love'}
                     </p>
                   </div>
@@ -279,7 +369,7 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
                           key={item.url}
                           layout
                           whileHover={{ scale: 1.05, y: -8 }}
-                          className="snap-center shrink-0 w-72 md:w-96 bg-white p-3 pb-16 shadow-[0_20px_50px_rgba(0,0,0,0.08)] rounded-[2rem] transition-all cursor-zoom-in relative border-4 border-white group"
+                          className={`snap-center shrink-0 w-72 md:w-96 bg-white p-3 pb-16 shadow-[0_20px_50px_rgba(0,0,0,0.08)] rounded-[2rem] transition-all cursor-zoom-in relative border-4 border-white group`}
                           onClick={() => handleZoom(item.url)}
                         >
                            <div className="w-full h-64 md:h-80 overflow-hidden rounded-[1.5rem] bg-gray-50 relative border border-gray-100">
@@ -307,7 +397,7 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
                                 </div>
                               )}
                            </div>
-                           <p className="absolute bottom-4 left-0 w-full text-center font-pacifico text-pink-400 text-xl tracking-wide">
+                           <p className={`absolute bottom-4 left-0 w-full text-center font-pacifico text-pink-400 text-xl tracking-wide`}>
                               {item.privacy === 'private' ? 'Our Secret' : `Chapter ${idx + 1}`}
                            </p>
                         </motion.div>
@@ -332,7 +422,7 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
             )}
           </div>
         )}
-      </div>
+      </motion.div>
 
       <AnimatePresence>
         {isZoomed && zoomedImage && (

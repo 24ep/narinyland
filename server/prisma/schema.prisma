@@ -1,0 +1,142 @@
+// This is your Prisma schema file for Narinyland
+// Connects to Supabase PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── App Configuration ───────────────────────────────────────────────
+
+model AppConfig {
+  id              String   @id @default("default")
+  appName         String   @default("Narinyland")
+  anniversaryDate DateTime @default(now())
+  treeStyle       String   @default("sakura")
+  galleryStyle    String   @default("carousel")
+  gallerySource   String   @default("manual") // "manual" | "instagram"
+  instagramUsername String  @default("")
+  daysPerTree     Int      @default(100)
+  daysPerFlower   Int      @default(7)
+  flowerType      String   @default("sunflower")
+  mixedFlowers    String[] @default(["sunflower", "tulip", "rose", "cherry", "lavender", "heart"])
+  skyMode         String   @default("follow_timezone") // "follow_timezone" | "noon" | "night"
+  timelineDefaultRows Int  @default(5)
+  musicUrl        String   @default("https://www.youtube.com/watch?v=5qap5aO4i9A")
+  proposalQuestions String[] @default(["Will you be my Valentine?", "Jaroonwit is so handsome, right?"])
+  isProposalAccepted Boolean  @default(false)
+  proposalProgress   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  partners Partner[]
+  coupons  Coupon[]
+}
+
+// ─── Partners ────────────────────────────────────────────────────────
+
+model Partner {
+  id        String    @id @default(uuid())
+  partnerId String    // "partner1" or "partner2"
+  name      String
+  avatar    String
+  config    AppConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId  String
+  points    Int       @default(0) // New: Points available to spend
+  lifetimePoints Int  @default(0) // New: Total points earned (for level calculation)
+
+  sentLetters LoveLetter[] @relation("SentLetters")
+
+  @@unique([configId, partnerId])
+}
+
+// ─── Memory Gallery ──────────────────────────────────────────────────
+
+model Memory {
+  id        String   @id @default(uuid())
+  url       String   // S3 URL or external URL
+  s3Key     String?  // S3 object key if stored in S3
+  privacy   String   @default("public") // "public" | "private"
+  caption   String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Timeline ────────────────────────────────────────────────────────
+
+model TimelineEvent {
+  id        String   @id @default(uuid())
+  text      String
+  type      String   // "pet" | "system" | "letter" | "quest"
+  location  String?
+  timestamp DateTime
+  mediaType String?   // Legacy: "image" | "video" | "audio"
+  mediaUrl  String?   // Legacy: S3 URL or external
+  mediaS3Key String?  // Legacy: S3 object key
+  mediaUrls   String[] @default([])
+  mediaTypes  String[] @default([])
+  mediaS3Keys String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Love Letters ────────────────────────────────────────────────────
+
+model LoveLetter {
+  id         String   @id @default(uuid())
+  content    String
+  from       Partner  @relation("SentLetters", fields: [fromId], references: [id], onDelete: Cascade)
+  fromId     String
+  unlockDate DateTime
+  isRead     Boolean  @default(false)
+  mediaType  String?  // "image" | "video" | "audio"
+  mediaUrl   String?
+  mediaS3Key String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ─── Love Coupons ────────────────────────────────────────────────────
+
+model Coupon {
+  id        String    @id @default(uuid())
+  title     String
+  emoji     String
+  desc      String
+  color     String
+  points    Int       @default(0) // New: Points value of the coupon
+  forPartner String   // "partner1" | "partner2"
+  isRedeemed Boolean  @default(false)
+  redeemedAt DateTime?
+  config    AppConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// ─── Love Stats ──────────────────────────────────────────────────────
+
+model LoveStats {
+  id              String @id @default("default")
+  xp              Int    @default(0)
+  level           Int    @default(1)
+  questsCompleted Int    @default(0)
+  leaves          Int    @default(0) // New: Total leaves grown (persistent)
+  points          Int    @default(0) // New: Shared pool of unspent family points
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── Quest Log ───────────────────────────────────────────────────────
+
+model QuestLog {
+  id          String   @id @default(uuid())
+  questText   String
+  completedBy String?  // partner name
+  completedAt DateTime @default(now())
+}

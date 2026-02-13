@@ -149,7 +149,7 @@ const PetChat: React.FC<PetChatProps> = ({ isOpen, setIsOpen, partner1Name, part
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-pink-500 gap-4 opacity-40">
                 <div className="text-7xl animate-bounce">🐶</div>
-                <p className="font-pacifico text-2xl">Ask Nari anything!</p>
+                <p className="font-outfit font-black text-2xl">Ask Nari anything!</p>
               </div>
             )}
             
@@ -167,7 +167,7 @@ const PetChat: React.FC<PetChatProps> = ({ isOpen, setIsOpen, partner1Name, part
                       : 'bg-white/70 text-gray-700 font-bold rounded-tl-none font-quicksand'
                   }`}
                 >
-                  {msg.role === 'model' && <span className="font-pacifico text-pink-400 block mb-1 text-[11px] uppercase tracking-tighter">Nari says...</span>}
+                  {msg.role === 'model' && <span className="font-outfit font-black text-pink-400 block mb-1 text-[10px] uppercase tracking-wider">Nari says...</span>}
                   {msg.text}
                 </div>
               </motion.div>

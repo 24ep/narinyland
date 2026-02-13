@@ -16,13 +16,19 @@ export interface Interaction {
   text: string;
   timestamp: Date;
   type: 'pet' | 'system' | 'letter' | 'quest';
+  location?: string;
   media?: MediaContent;
+  mediaItems?: MediaContent[];
 }
 
 export interface LoveStats {
   xp: number;
   level: number;
   questsCompleted: number;
+  partnerPoints?: {
+    partner1: number;
+    partner2: number;
+  };
 }
 
 export interface PetState {
@@ -41,4 +47,5 @@ export interface LoveLetterMessage {
   unlockDate: Date;
   isRead: boolean;
   media?: MediaContent;
+  mediaItems?: MediaContent[];
 }

@@ -1,5 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
+import * as React from 'react';
+import { useState, useMemo } from 'react';
 // Added Variants to imports for proper typing
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Emotion } from '../types';
@@ -251,20 +252,7 @@ const PetVisual: React.FC<PetVisualProps> = ({ emotion, message, level = 1, clas
 
   return (
     <div className={`relative flex flex-col items-center justify-center perspective-[1200px] ${className}`}>
-      <AnimatePresence>
-        {message && (
-          <motion.div
-            key="pet-message"
-            initial={{ opacity: 0, y: 30, scale: 0.8 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.6, y: 20 }}
-            className="absolute -top-64 bg-white/95 backdrop-blur-xl px-8 py-5 rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.1)] text-pink-500 font-bold text-base text-center max-w-[280px] border-4 border-white z-[100] pointer-events-none"
-          >
-            {message}
-            <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[18px] border-l-transparent border-r-[18px] border-r-transparent border-t-[22px] border-t-white/95"></div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
 
       <motion.div
         animate={isPlaying ? 'playing' : 'idle'}

@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LoveLetterMessage, MediaContent } from '../types';
+import DatePicker from 'react-datepicker';
+import "react-datepicker/dist/react-datepicker.css";
 
 interface Partners {
   partner1: { name: string; avatar: string };
@@ -234,10 +236,11 @@ const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSe
 
                  <div>
                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Unlock Date</label>
-                   <input 
-                     type="datetime-local" 
-                     value={composeDate}
-                     onChange={(e) => setComposeDate(e.target.value)}
+                   <DatePicker
+                     selected={new Date(composeDate)}
+                     onChange={(date: Date | null) => date && setComposeDate(date.toISOString().slice(0, 16))}
+                     showTimeSelect
+                     dateFormat="Pp"
                      className="w-full bg-white border border-gray-200 rounded-xl p-3.5 text-sm focus:ring-2 focus:ring-pink-300 outline-none shadow-sm"
                    />
                  </div>
