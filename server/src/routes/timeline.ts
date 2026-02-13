@@ -111,7 +111,7 @@ router.put('/:id', upload.array('media', 10), async (req, res) => {
     const updateData: any = {};
     if (text !== undefined) updateData.text = text;
     if (type !== undefined) updateData.type = type;
-    if (location !== undefined) updateData.location = location;
+    if (location !== undefined) updateData.location = location as string;
     if (timestamp !== undefined) updateData.timestamp = new Date(timestamp);
 
     if (files && files.length > 0) {
