@@ -68,6 +68,7 @@ app.use((req, _res, next) => {
    Strip /api prefix to handle Vercel routing inconsistencies
 ========================= */
 app.use((req, _res, next) => {
+  // Always strip /api for both local and cloud environments if it exists
   if (req.url.startsWith('/api')) {
     req.url = req.url.replace(/^\/api/, '') || '/';
   }
@@ -119,30 +120,36 @@ app.use((req, res) => {
 
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
-const startServer = async () => {
-  try {
-    await prisma.$connect();
-    console.log('✅ Database connected');
+// Only start the server if we are not on Vercel
+if (!process.env.VERCEL) {
+  const startServer = async () => {
+    try {
+      await prisma.$connect();
+      console.log('✅ Database connected');
 
-    // Serve static files from root dist directory if it exists
-    const distPath = path.join(process.cwd(), 'dist');
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api')) return next();
-        res.sendFile(path.join(distPath, 'index.html'));
+      // Serve static files from root dist directory if it exists
+      const distPath = path.join(process.cwd(), 'dist');
+      if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (req, res, next) => {
+          if (req.path.startsWith('/api')) return next();
+          res.sendFile(path.join(distPath, 'index.html'));
+        });
+        console.log('📦 Serving static files from', distPath);
+      }
+
+      app.listen(PORT, () => {
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
       });
-      console.log('📦 Serving static files from', distPath);
+    } catch (error) {
+      console.error('❌ Failed to start server:', error);
     }
+  };
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-  }
-};
-
-startServer();
+  startServer();
+} else {
+  // On Vercel, we only need to ensure the DB connection is ready or relies on lazy connection
+  console.log('⚡ Server initialized for Vercel');
+}
 
 export default app;
