@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
 import cors from 'cors'; // Restored cors package
 import prisma from './lib/prisma.js';
 
@@ -117,19 +119,30 @@ app.use((req, res) => {
 
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
-if (!process.env.VERCEL) {
-  const startServer = async () => {
-    try {
-      await prisma.$connect();
-      console.log('✅ Database connected');
-      app.listen(PORT, () => {
-        console.log(`🚀 Server running on http://localhost:${PORT}`);
+const startServer = async () => {
+  try {
+    await prisma.$connect();
+    console.log('✅ Database connected');
+
+    // Serve static files from root dist directory if it exists
+    const distPath = path.join(process.cwd(), 'dist');
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) return next();
+        res.sendFile(path.join(distPath, 'index.html'));
       });
-    } catch (error) {
-      console.error('❌ Failed to start server:', error);
+      console.log('📦 Serving static files from', distPath);
     }
-  };
-  startServer();
-}
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+  }
+};
+
+startServer();
 
 export default app;
