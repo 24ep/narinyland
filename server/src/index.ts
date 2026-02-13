@@ -21,7 +21,7 @@ const PORT = parseInt(process.env.PORT || '4000', 10);
 // ─── Middleware ──────────────────────────────────────────────────────
 
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000' || 'https://narinyland.vercel.app' || 'https://narinyland-server.vercel.app',
   credentials: true,
 }));
 
