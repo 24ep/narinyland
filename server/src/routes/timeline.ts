@@ -14,8 +14,8 @@ router.get('/', async (_req, res) => {
     });
 
     const response = events.map((e) => {
-      const mediaItems = (e as any).mediaUrls?.map((url: string, i: number) => ({
-        type: (e as any).mediaTypes?.[i] || 'image',
+      const mediaItems = e.mediaUrls?.map((url: string, i: number) => ({
+        type: e.mediaTypes?.[i] || 'image',
         url: url
       })) || [];
 
@@ -145,8 +145,8 @@ router.put('/:id', upload.array('media', 10), async (req, res) => {
       data: updateData as any,
     });
 
-    const mediaItems = (event as any).mediaUrls?.map((url: string, i: number) => ({
-      type: (event as any).mediaTypes?.[i] || 'image',
+    const mediaItems = event.mediaUrls?.map((url: string, i: number) => ({
+      type: event.mediaTypes?.[i] || 'image',
       url
     })) || [];
 
@@ -176,7 +176,7 @@ router.delete('/:id', async (req, res) => {
     }
 
     // Delete all files from S3
-    const keysToDelete = [...((event as any).mediaS3Keys || [])];
+    const keysToDelete = [...(event.mediaS3Keys || [])];
     if (event.mediaS3Key && !keysToDelete.includes(event.mediaS3Key)) {
       keysToDelete.push(event.mediaS3Key);
     }

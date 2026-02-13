@@ -4,10 +4,8 @@
  */
 
 
-const API_BASE =
-  (import.meta as any).env.DEV
-    ? 'http://localhost:3000/api'
-    : '/api';
+const API_BASE = (import.meta as any).env.VITE_API_URL || 
+  ((import.meta as any).env.DEV ? 'http://localhost:3000/api' : '/api');
 
 // ─── Helper ──────────────────────────────────────────────────────────
 
