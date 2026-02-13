@@ -117,7 +117,7 @@ app.use((req, res) => {
 
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
-if (process.env.NODE_ENV !== 'production') {
+if (!process.env.VERCEL) {
   const startServer = async () => {
     try {
       await prisma.$connect();
