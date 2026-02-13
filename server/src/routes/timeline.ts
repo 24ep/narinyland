@@ -40,7 +40,7 @@ router.get('/', async (_req, res) => {
 // ─── POST /api/timeline ──────────────────────────────────────────────
 router.post('/', upload.array('media', 10), async (req, res) => {
   try {
-    const { text, type, timestamp, location } = req.body;
+    const { text, type, timestamp, location } = req.body as any;
     const files = req.files as Express.Multer.File[];
     
     let mediaUrls: string[] = [];
@@ -105,7 +105,7 @@ router.post('/', upload.array('media', 10), async (req, res) => {
 router.put('/:id', upload.array('media', 10), async (req, res) => {
   try {
     const { id } = req.params;
-    const { text, type, timestamp, location } = req.body;
+    const { text, type, timestamp, location } = req.body as any;
     const files = req.files as Express.Multer.File[];
 
     const updateData: any = {};
