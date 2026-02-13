@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
+
 import prisma from './lib/prisma.js';
 
 import configRoutes from './routes/config.js';
@@ -16,21 +16,31 @@ import { antibotMiddleware } from './middleware/antibot.js';
 const app = express();
 
 /* =========================
-   ✅ CORS (FIX จริง)
+   ✅ CORS (Manual Fix)
 ========================= */
-const corsOptions = {
-  origin: [
+app.use((req, res, next) => {
+  const allowedOrigins = [
     'https://narinyland.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-};
+  ];
+  
+  const origin = req.headers.origin;
+  
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // ⭐ สำคัญมาก (preflight)
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
 
 /* =========================
    Body
