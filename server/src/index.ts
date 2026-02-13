@@ -78,4 +78,21 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
+const PORT = parseInt(process.env.PORT || '4000', 10);
+
+if (process.env.NODE_ENV !== 'production') {
+  const startServer = async () => {
+    try {
+      await prisma.$connect();
+      console.log('✅ Database connected');
+      app.listen(PORT, () => {
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+      });
+    } catch (error) {
+      console.error('❌ Failed to start server:', error);
+    }
+  };
+  startServer();
+}
+
 export default app;
