@@ -1,6 +1,3 @@
-// This is your Prisma schema file for Narinyland
-// Connects to Supabase PostgreSQL
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,8 +6,6 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
-// ─── App Configuration ───────────────────────────────────────────────
 
 model AppConfig {
   id              String   @id @default("default")
@@ -32,60 +27,49 @@ model AppConfig {
   proposalProgress   Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
   partners Partner[]
   coupons  Coupon[]
 }
 
-// ─── Partners ────────────────────────────────────────────────────────
-
 model Partner {
   id        String    @id @default(uuid())
-  partnerId String    // "partner1" or "partner2"
+  partnerId String    
   name      String
   avatar    String
   config    AppConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
   configId  String
-  points    Int       @default(0) // New: Points available to spend
-  lifetimePoints Int  @default(0) // New: Total points earned (for level calculation)
-
+  points    Int       @default(0)
+  lifetimePoints Int  @default(0)
   sentLetters LoveLetter[] @relation("SentLetters")
-
   @@unique([configId, partnerId])
 }
 
-// ─── Memory Gallery ──────────────────────────────────────────────────
-
 model Memory {
   id        String   @id @default(uuid())
-  url       String   // S3 URL or external URL
-  s3Key     String?  // S3 object key if stored in S3
-  privacy   String   @default("public") // "public" | "private"
+  url       String   
+  s3Key     String?  
+  privacy   String   @default("public")
   caption   String?
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-// ─── Timeline ────────────────────────────────────────────────────────
-
 model TimelineEvent {
   id        String   @id @default(uuid())
   text      String
-  type      String   // "pet" | "system" | "letter" | "quest"
+  type      String   
   location  String?
   timestamp DateTime
-  mediaType String?   // Legacy: "image" | "video" | "audio"
-  mediaUrl  String?   // Legacy: S3 URL or external
-  mediaS3Key String?  // Legacy: S3 object key
+  mediaType String?   
+  mediaUrl  String?   
+  mediaS3Key String?  
   mediaUrls   String[] @default([])
   mediaTypes  String[] @default([])
   mediaS3Keys String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
-// ─── Love Letters ────────────────────────────────────────────────────
 
 model LoveLetter {
   id         String   @id @default(uuid())
@@ -94,14 +78,12 @@ model LoveLetter {
   fromId     String
   unlockDate DateTime
   isRead     Boolean  @default(false)
-  mediaType  String?  // "image" | "video" | "audio"
+  mediaType  String?  
   mediaUrl   String?
   mediaS3Key String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
-
-// ─── Love Coupons ────────────────────────────────────────────────────
 
 model Coupon {
   id        String    @id @default(uuid())
@@ -109,8 +91,8 @@ model Coupon {
   emoji     String
   desc      String
   color     String
-  points    Int       @default(0) // New: Points value of the coupon
-  forPartner String   // "partner1" | "partner2"
+  points    Int       @default(0)
+  forPartner String   
   isRedeemed Boolean  @default(false)
   redeemedAt DateTime?
   config    AppConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
@@ -119,24 +101,20 @@ model Coupon {
   updatedAt DateTime  @updatedAt
 }
 
-// ─── Love Stats ──────────────────────────────────────────────────────
-
 model LoveStats {
   id              String @id @default("default")
   xp              Int    @default(0)
   level           Int    @default(1)
   questsCompleted Int    @default(0)
-  leaves          Int    @default(0) // New: Total leaves grown (persistent)
-  points          Int    @default(0) // New: Shared pool of unspent family points
+  leaves          Int    @default(0)
+  points          Int    @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
 
-// ─── Quest Log ───────────────────────────────────────────────────────
-
 model QuestLog {
   id          String   @id @default(uuid())
   questText   String
-  completedBy String?  // partner name
+  completedBy String?  
   completedAt DateTime @default(now())
 }
