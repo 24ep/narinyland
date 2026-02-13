@@ -19,7 +19,7 @@ const app = express();
    ✅ CORS (FIX จริง)
 ========================= */
 const corsOptions = {
-  origin: 'https://narinyland.vercel.app',
+  origin: '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
