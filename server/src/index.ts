@@ -19,8 +19,26 @@ const app = express();
    ✅ CORS (Standard Package)
 ========================= */
 // origin: true matches the request origin (reflects it), effectively allowing all with credentials
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://narinyland.vercel.app',
+  ...(process.env.CORS_ORIGIN ? [process.env.CORS_ORIGIN] : [])
+];
+
 const corsConfigs = { 
-  origin: true, 
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    
+    // For debugging: output the blocked origin
+    console.log('Blocked by CORS:', origin);
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
