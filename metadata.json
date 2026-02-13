@@ -1,0 +1,9 @@
+{
+  "name": "Narinyland Virtual Pet",
+  "description": "A romantic, AI-powered virtual companion for couples that reacts to your presence and expressions in real-time.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
