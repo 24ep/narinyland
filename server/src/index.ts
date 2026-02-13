@@ -19,22 +19,17 @@ const app = express();
    ✅ CORS (Manual Fix)
 ========================= */
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    'https://narinyland.vercel.app',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ];
-  
   const origin = req.headers.origin;
   
-  if (origin && allowedOrigins.includes(origin)) {
+  // Allow ALL origins
+  if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
-  
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
+  // Handle preflight requests immediately
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
