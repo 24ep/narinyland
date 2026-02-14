@@ -4,7 +4,9 @@ RUN apt-get update && apt-get install -y openssl libssl-dev && rm -rf /var/lib/a
 # Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ecaf0bd06f5d11a23#nodealpine to understand why libc6-compat might be needed.
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
 COPY package.json package-lock.json* ./
 ENV PRISMA_SKIP_POSTINSTALL_GENERATE=1
 RUN npm ci
@@ -33,8 +35,8 @@ ENV NODE_ENV=production
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN groupadd --system --gid 1001 nodejs
+RUN useradd --system --uid 1001 -g nodejs nextjs
 
 COPY --from=builder /app/public ./public
 
