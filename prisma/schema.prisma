@@ -22,8 +22,10 @@ model AppConfig {
   flowerType      String   @default("sunflower")
   mixedFlowers    String[] @default(["sunflower", "tulip", "rose", "cherry", "lavender", "heart"])
   skyMode         String   @default("follow_timezone") // "follow_timezone" | "noon" | "night"
+  petType         String   @default("cat")
+  pets            Json     @default("[]")
   timelineDefaultRows Int  @default(5)
-  musicUrl        String   @default("https://www.youtube.com/watch?v=5qap5aO4i9A")
+  musicPlaylist   String[] @default(["https://www.youtube.com/watch?v=5qap5aO4i9A"])
   proposalQuestions String[] @default(["Will you be my Valentine?", "Jaroonwit is so handsome, right?"])
   isProposalAccepted Boolean  @default(false)
   proposalProgress   Int      @default(0)

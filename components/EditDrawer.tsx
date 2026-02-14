@@ -437,16 +437,15 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                     className="w-full border-2 border-gray-50 rounded-2xl p-4 focus:border-pink-200 outline-none transition-all"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest ml-1">Background Music (YouTube)</label>
-                  <input 
-                    type="text" 
-                    value={localConfig.musicUrl || ''}
-                    onChange={(e) => handleInputChange('musicUrl', e.target.value)}
-                    className="w-full border-2 border-gray-50 rounded-2xl p-4 focus:border-pink-200 outline-none transition-all"
-                    placeholder="Paste YouTube Link"
-                  />
-                </div>
+                <div className="col-span-2">
+                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest ml-1">Music Playlist (One URL per line) 🎵</label>
+                    <textarea 
+                      value={(localConfig.musicPlaylist || []).join('\n')} 
+                      onChange={(e) => handleInputChange('musicPlaylist', e.target.value.split('\n'))}
+                      className="w-full border-2 border-gray-50 rounded-2xl p-4 text-xs font-bold text-gray-600 focus:border-pink-200 outline-none transition-colors h-24 resize-none"
+                      placeholder="https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=..." 
+                    />
+                  </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest ml-1">Anniversary</label>

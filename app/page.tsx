@@ -32,7 +32,7 @@ const Home: React.FC = () => {
   const [isVolumeModalOpen, setIsVolumeModalOpen] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.5);
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
-  const [isMusicMuted, setIsMusicMuted] = useState(false);
+  const [isMusicMuted, setIsMusicMuted] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [toast, setToast] = useState({ message: '', isVisible: false });
 
@@ -71,7 +71,7 @@ const Home: React.FC = () => {
     mixedFlowers: ['sunflower', 'tulip', 'rose', 'cherry', 'lavender', 'heart'],
     timelineDefaultRows: 5,
     skyMode: "follow_timezone",
-    musicUrl: "https://www.youtube.com/watch?v=igx8-BdblEI",
+    musicPlaylist: ["https://www.youtube.com/watch?v=igx8-BdblEI"],
     proposal: {
       questions: ["Will you be my partner forever?"],
       isAccepted: false,
@@ -141,8 +141,10 @@ const Home: React.FC = () => {
           flowerType: serverConfig.flowerType || prev.flowerType,
           mixedFlowers: serverConfig.mixedFlowers || prev.mixedFlowers,
           skyMode: serverConfig.skyMode || prev.skyMode,
+          petType: serverConfig.petType || prev.petType,
+          pets: serverConfig.pets || prev.pets,
           timelineDefaultRows: serverConfig.timelineDefaultRows ?? prev.timelineDefaultRows,
-          musicUrl: serverConfig.musicUrl || prev.musicUrl,
+          musicPlaylist: serverConfig.musicPlaylist || prev.musicPlaylist,
           proposal: serverConfig.proposal || prev.proposal,
           partners: serverConfig.partners || prev.partners,
           gallery: memories.length ? memories.map((m: any) => ({ url: m.url, privacy: m.privacy, caption: m.caption })) : prev.gallery,
@@ -196,8 +198,10 @@ const Home: React.FC = () => {
         flowerType: next.flowerType,
         mixedFlowers: next.mixedFlowers,
         skyMode: next.skyMode,
+        petType: next.petType,
+        pets: next.pets,
         timelineDefaultRows: next.timelineDefaultRows,
-        musicUrl: next.musicUrl,
+        musicPlaylist: next.musicPlaylist,
         proposal: next.proposal,
         isProposalAccepted: next.proposal.isAccepted,
         proposalProgress: next.proposal.progress,
@@ -1023,7 +1027,7 @@ const Home: React.FC = () => {
             onClose={() => setToast(prev => ({ ...prev, isVisible: false }))} 
           />
           <SimplePlayer 
-            url={appConfig.musicUrl || "https://www.youtube.com/watch?v=igx8-BdblEI"} 
+            playlist={appConfig.musicPlaylist || ["https://www.youtube.com/watch?v=igx8-BdblEI"]} 
             volume={musicVolume}
             setVolume={setMusicVolume}
             playing={isMusicPlaying}

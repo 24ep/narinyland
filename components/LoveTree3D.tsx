@@ -269,7 +269,7 @@ const LeafExplosion = ({ count = 20, color = "#4ade80" }) => {
   );
 };
 
-const Tree = ({ theme, scale = 1, leafCount, windFactor = 1, branchCount = 6, quality = 'medium' }: { theme: any; scale?: number; leafCount: number; windFactor?: number; branchCount?: number; quality?: string }) => {
+const Tree = ({ theme, scale = 1, leafCount, windFactor = 1, branchCount = 6, quality = 'medium', shake = false }: { theme: any; scale?: number; leafCount: number; windFactor?: number; branchCount?: number; quality?: string; shake?: boolean }) => {
   const group = useRef<THREE.Group>(null);
   const [pulse, setPulse] = useState(1);
   const prevLeafCount = useRef(leafCount);
@@ -318,8 +318,17 @@ const Tree = ({ theme, scale = 1, leafCount, windFactor = 1, branchCount = 6, qu
   useFrame(({ clock }) => {
     if (group.current) {
         // Wind sway
-        group.current.rotation.z = Math.sin(clock.elapsedTime * 0.4 * windFactor) * (0.015 * windFactor);
-        group.current.rotation.x = Math.cos(clock.elapsedTime * 0.3 * windFactor) * (0.015 * windFactor);
+        let rotZ = Math.sin(clock.elapsedTime * 0.4 * windFactor) * (0.015 * windFactor);
+        let rotX = Math.cos(clock.elapsedTime * 0.3 * windFactor) * (0.015 * windFactor);
+
+        // Shake effect
+        if (shake) {
+            rotZ += Math.sin(clock.elapsedTime * 40) * 0.08;
+            rotX += Math.cos(clock.elapsedTime * 45) * 0.08;
+        }
+
+        group.current.rotation.z = rotZ;
+        group.current.rotation.x = rotX;
         
         // Pulse lerp back to 1 - Elastic bounce
         if (pulse > 1 || pulse < 1) { // generic check, though we sett to 1.5
@@ -428,6 +437,12 @@ const Pet3D = React.forwardRef<THREE.Group, { emotion: Emotion; theme: any; petT
   const [activity, setActivity] = useState<'walk' | 'sit' | 'lie' | 'idle' | 'play'>('idle');
   const activityTimer = useRef(0);
   const targetPos = useRef(new THREE.Vector3(2, 0, 2));
+
+  // Jump Physics State
+  const isJumping = useRef(false);
+  const jumpVelocity = useRef(0);
+  const jumpHeight = useRef(0);
+  const spinSpeed = useRef(0);
 
   useFrame((state, delta) => {
     if (ref.current && coreRef.current) {
@@ -577,13 +592,51 @@ const Pet3D = React.forwardRef<THREE.Group, { emotion: Emotion; theme: any; petT
             tailRef.current.rotation.z = (Math.PI / 8) + Math.sin(t * wagSpeed) * 0.2;
         }
 
-        const hitScale = active ? 1.3 : 1;
-        ref.current.scale.lerp(new THREE.Vector3(hitScale, hitScale, hitScale), 0.1);
+        // Jump Physics Custom Animation overrides everything else
+        if (isJumping.current) {
+            jumpVelocity.current -= delta * 15; // Gravity
+            jumpHeight.current += jumpVelocity.current * delta;
+            
+            // Spin while jumping
+            if (coreRef.current) {
+                coreRef.current.rotation.y += spinSpeed.current * delta;
+            }
+
+            if (jumpHeight.current <= 0) {
+                jumpHeight.current = 0;
+                isJumping.current = false;
+                // Landing wobble
+                ref.current.scale.set(1.2, 0.8, 1.2);
+            }
+            // Apply Jump Height to Core
+            if (coreRef.current) {
+                coreRef.current.position.y = Math.max(0, coreRef.current.position.y + jumpHeight.current);
+            }
+        }
+
+        // Elastic recovery from landing squash
+        ref.current.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
     }
   });
 
+  const handlePetClick = (e: any) => {
+    e.stopPropagation();
+    
+    if (!isJumping.current) {
+        isJumping.current = true;
+        jumpVelocity.current = 6.0; // Initial jump force
+        spinSpeed.current = Math.random() > 0.5 ? 10 : -10; // Random spin direction
+        
+        // Squash before jump
+        ref.current.scale.set(1.2, 0.8, 1.2);
+        
+        setActive(true);
+        setTimeout(() => setActive(false), 500);
+    }
+  };
+
   return (
-    <group ref={ref} position={startPos}>
+    <group ref={ref} position={startPos} onClick={handlePetClick}>
         <group ref={coreRef}>
             {/* Body */}
             <mesh position={[0, 0.45, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
@@ -757,83 +810,139 @@ const Flower = ({ type, position, scale = 1, windFactor = 1, quality = 'medium' 
             <group position={[0, 0.4, 0]}>
                 {type === 'sunflower' && (
                     <group>
-                        {/* Petals */}
-                        {Array.from({ length: 12 }).map((_, i) => (
-                            <mesh key={i} rotation={[0, 0, (i / 12) * Math.PI * 2]} position={[0, 0, 0]}>
-                                <mesh position={[0.15, 0, 0]}>
-                                    <sphereGeometry args={[0.12, 8, 2]} scale={[1, 0.3, 1]} />
-                                    <meshStandardMaterial color="#fbbf24" emissive="#78350f" emissiveIntensity={0.2} />
-                                </mesh>
-                            </mesh>
+                        {[
+                            { pos: [0, 0, 0], s: 1, rotY: 0 },
+                            { pos: [0.1, -0.05, 0.08], s: 0.7, rotY: 1 },
+                            { pos: [-0.08, -0.02, -0.05], s: 0.85, rotY: 2.5 }
+                        ].map((sf, k) => (
+                            <group key={k} position={sf.pos as [number, number, number]} scale={sf.s} rotation={[0, sf.rotY, 0]}>
+                                 <group position={[0, -0.2, 0]}>
+                                     {/* Tall Stem */}
+                                     <mesh position={[0, 0.35, 0]}>
+                                         <cylinderGeometry args={[0.02, 0.03, 0.7, 8]} />
+                                         <meshStandardMaterial color={stemColor} />
+                                     </mesh>
+                                     
+                                     {/* Large Leaves */}
+                                     <mesh position={[0.08, 0.2, 0]} rotation={[0, 0, -0.5]}>
+                                         <sphereGeometry args={[0.08, 8, 4]} scale={[1.5, 0.2, 1]} />
+                                         <meshStandardMaterial color={stemColor} side={THREE.DoubleSide} />
+                                     </mesh>
+                                     <mesh position={[-0.08, 0.4, 0]} rotation={[0, 0, 0.5]}>
+                                         <sphereGeometry args={[0.08, 8, 4]} scale={[1.5, 0.2, 1]} />
+                                         <meshStandardMaterial color={stemColor} side={THREE.DoubleSide} />
+                                     </mesh>
+
+                                     {/* Flower Head */}
+                                     <group position={[0, 0.65, 0.05]} rotation={[0.4, 0, 0]}>
+                                        <mesh position={[0, 0, -0.02]}>
+                                            <cylinderGeometry args={[0.03, 0.02, 0.05, 8]} rotation={[Math.PI/2, 0, 0]} />
+                                            <meshStandardMaterial color={stemColor} />
+                                        </mesh>
+                                        
+                                        {/* Petals */}
+                                        {Array.from({ length: 16 }).map((_, i) => (
+                                            <mesh key={i} rotation={[0, 0, (i / 16) * Math.PI * 2]} position={[0, 0, 0]}>
+                                                <mesh position={[0.18, 0, 0]}>
+                                                    <sphereGeometry args={[0.1, 8, 4]} scale={[1.8, 0.4, 1]} />
+                                                    <meshStandardMaterial color="#fbbf24" emissive="#d97706" emissiveIntensity={0.2} />
+                                                </mesh>
+                                            </mesh>
+                                        ))}
+                                        {/* Center */}
+                                        <mesh position={[0, 0, 0.03]}>
+                                            <circleGeometry args={[0.14, 24]} />
+                                            <meshStandardMaterial color="#451a03" roughness={1} />
+                                        </mesh>
+                                        {/* Seeds Detail */}
+                                        <mesh position={[0, 0, 0.035]}>
+                                            <ringGeometry args={[0, 0.12, 16]} /> 
+                                            <meshStandardMaterial color="#78350f" wireframe opacity={0.3} transparent />
+                                        </mesh>
+                                     </group>
+                                 </group>
+                            </group>
                         ))}
-                        {/* Center */}
-                        <mesh position={[0, 0, 0.02]}>
-                            <circleGeometry args={[0.1, 16]} />
-                            <meshStandardMaterial color="#451a03" roughness={1} />
-                        </mesh>
                     </group>
                 )}
                 {type === 'tulip' && (
-                    <group position={[0, 0.1, 0]}>
-                         {/* Stem Base */}
-                         <mesh position={[0, -0.1, 0]}>
-                             <cylinderGeometry args={[0.06, 0.04, 0.2, 8]} />
-                             <meshStandardMaterial color={stemColor} />
-                         </mesh>
+                    <group>
+                        {[
+                            { pos: [0, 0, 0], s: 1, r: [0, 0, 0] },
+                            { pos: [0.06, -0.02, 0.06], s: 0.85, r: [0.1, 2, 0.1] },
+                            { pos: [-0.06, -0.01, -0.05], s: 0.9, r: [-0.1, 4, -0.1] }
+                        ].map((tData, k) => (
+                            <group key={k} position={tData.pos as [number, number, number]} scale={tData.s} rotation={tData.r as [number, number, number]}>
+                                 <group position={[0, 0.1, 0]}>
+                                     {/* Stem Base */}
+                                     <mesh position={[0, -0.1, 0]}>
+                                         <cylinderGeometry args={[0.04, 0.03, 0.25, 8]} />
+                                         <meshStandardMaterial color={stemColor} />
+                                     </mesh>
 
-                         {/* Flower Head */}
-                         <group position={[0, 0.1, 0]}>
-                            {/* Inner Petals */}
-                            {Array.from({ length: 3 }).map((_, i) => (
-                                <mesh 
-                                    key={`in-${i}`} 
-                                    rotation={[0.15, i * (Math.PI * 2 / 3), 0]} 
-                                    position={[Math.sin(i * (Math.PI * 2 / 3)) * 0.02, 0, Math.cos(i * (Math.PI * 2 / 3)) * 0.02]}
-                                    scale={[0.8, 1.8, 0.4]}
-                                >
-                                    <sphereGeometry args={[0.08, 16, 16]} />
-                                    <meshStandardMaterial color="#f43f5e" emissive="#be123c" emissiveIntensity={0.2} roughness={0.3} />
-                                </mesh>
-                            ))}
-                            {/* Outer Petals */}
-                            {Array.from({ length: 3 }).map((_, i) => (
-                                <mesh 
-                                    key={`out-${i}`} 
-                                    rotation={[0.3, i * (Math.PI * 2 / 3) + Math.PI/3, 0]} 
-                                    position={[Math.sin(i * (Math.PI * 2 / 3) + Math.PI/3) * 0.05, -0.02, Math.cos(i * (Math.PI * 2 / 3) + Math.PI/3) * 0.05]}
-                                    scale={[0.9, 1.7, 0.5]}
-                                >
-                                     <sphereGeometry args={[0.08, 16, 16]} />
-                                     <meshStandardMaterial color="#e11d48" emissive="#881337" emissiveIntensity={0.2} roughness={0.3} />
-                                </mesh>
-                            ))}
-                         </group>
+                                     {/* Flower Head */}
+                                     <group position={[0, 0.12, 0]}>
+                                        {/* Tulip Cup */}
+                                        <group scale={[1, 1, 1]}>
+                                            {/* Main Cup */}
+                                            <mesh position={[0, 0.08, 0]}>
+                                                <cylinderGeometry args={[0.04, 0.07, 0.12, 8, 1, true]} />
+                                                <meshStandardMaterial color="#be123c" side={THREE.DoubleSide} />
+                                            </mesh>
+                                            {/* Petals */}
+                                            {[0, 1, 2].map((i) => (
+                                                <mesh 
+                                                    key={i} 
+                                                    rotation={[0.1, i * (Math.PI * 2 / 3), 0]} 
+                                                    position={[Math.sin(i * (Math.PI * 2 / 3)) * 0.03, 0.1, Math.cos(i * (Math.PI * 2 / 3)) * 0.03]}
+                                                >
+                                                    <sphereGeometry args={[0.045, 8, 16, 0, Math.PI * 2, 0, Math.PI/2]} />
+                                                    <meshStandardMaterial color="#f43f5e" emissive="#be123c" emissiveIntensity={0.1} side={THREE.DoubleSide} />
+                                                </mesh>
+                                            ))}
+                                        </group>
+                                     </group>
 
-                         {/* Long Leaves */}
-                         <group position={[0, -0.2, 0]}>
-                              <mesh rotation={[0.4, 0, 0]} position={[0, 0.15, 0.08]}>
-                                  <cylinderGeometry args={[0.01, 0.04, 0.5, 4]} />
-                                  <meshStandardMaterial color={stemColor} />
-                              </mesh>
-                              <mesh rotation={[0.5, Math.PI, 0]} position={[0, 0.1, -0.08]} scale={0.8}>
-                                  <cylinderGeometry args={[0.01, 0.04, 0.5, 4]} />
-                                  <meshStandardMaterial color={stemColor} />
-                              </mesh>
-                         </group>
+                                     {/* Long Leaves */}
+                                     <group position={[0, -0.15, 0]}>
+                                          <mesh rotation={[0.4, 0, 0]} position={[0, 0.12, 0.06]}>
+                                              <cylinderGeometry args={[0.01, 0.03, 0.4, 4]} />
+                                              <meshStandardMaterial color={stemColor} />
+                                          </mesh>
+                                          <mesh rotation={[0.5, Math.PI, 0]} position={[0, 0.1, -0.06]} scale={0.85}>
+                                              <cylinderGeometry args={[0.01, 0.03, 0.4, 4]} />
+                                              <meshStandardMaterial color={stemColor} />
+                                          </mesh>
+                                     </group>
+                                </group>
+                            </group>
+                        ))}
                     </group>
                 )}
                 {type === 'rose' && (
-                    <group>
-                        <mesh castShadow>
-                            <torusKnotGeometry args={[0.12, 0.05, 64, 8, 2, 3]} />
-                            <meshStandardMaterial color="#be123c" roughness={0.3} emissive="#881337" emissiveIntensity={0.5} />
-                        </mesh>
-                        {/* Outer Petals */}
-                        {Array.from({ length: 5 }).map((_, i) => (
-                            <mesh key={i} rotation={[1.2, (i / 5) * Math.PI * 2, 0]} position={[0, 0, 0]}>
-                                <sphereGeometry args={[0.15, 8, 8, 0, Math.PI, 0, Math.PI / 2]} />
-                                <meshStandardMaterial color="#9f1239" side={THREE.DoubleSide} />
-                            </mesh>
+                     <group>
+                        {[
+                            { pos: [0, 0, 0], s: 0.8, c: "#be123c" },
+                            { pos: [0.08, -0.05, 0.05], s: 0.6, c: "#9f1239" },
+                            { pos: [-0.07, -0.08, -0.06], s: 0.7, c: "#e11d48" }
+                        ].map((rData, k) => (
+                            <group key={k} position={rData.pos as [number, number, number]} scale={rData.s} rotation={[Math.random()*0.5, Math.random()*Math.PI, Math.random()*0.5]}>
+                                <mesh castShadow position={[0, 0.1, 0]}>
+                                    <torusKnotGeometry args={[0.08, 0.03, 64, 8, 2, 3]} />
+                                    <meshStandardMaterial color={rData.c} roughness={0.3} emissive={rData.c} emissiveIntensity={0.2} />
+                                </mesh>
+                                {/* Leaves */}
+                                <group position={[0, -0.05, 0]}>
+                                     <mesh rotation={[0.5, 0, 0]} position={[0, 0, 0.06]}>
+                                         <coneGeometry args={[0.04, 0.15, 3]} />
+                                         <meshStandardMaterial color={stemColor} />
+                                     </mesh>
+                                      <mesh rotation={[0.5, Math.PI, 0]} position={[0, -0.02, -0.06]}>
+                                         <coneGeometry args={[0.04, 0.15, 3]} />
+                                         <meshStandardMaterial color={stemColor} />
+                                     </mesh>
+                                </group>
+                            </group>
                         ))}
                     </group>
                 )}
@@ -853,11 +962,27 @@ const Flower = ({ type, position, scale = 1, windFactor = 1, quality = 'medium' 
                 )}
                 {type === 'lavender' && (
                     <group>
-                        {Array.from({ length: 6 }).map((_, i) => (
-                            <mesh key={i} position={[0, i * 0.06, 0]}>
-                                <sphereGeometry args={[0.05 - i * 0.005, 6, 6]} />
-                                <meshStandardMaterial color="#a78bfa" emissive="#6d28d9" emissiveIntensity={0.4} />
-                            </mesh>
+                        {[
+                            { x: 0, z: 0, h: 1 }, 
+                            { x: 0.05, z: 0.05, h: 0.8 },
+                            { x: -0.05, z: 0.05, h: 0.9 },
+                            { x: 0.05, z: -0.05, h: 0.85 },
+                            { x: -0.05, z: -0.05, h: 0.75 }
+                        ].map((pos, k) => (
+                            <group key={k} position={[pos.x, 0, pos.z]} scale={[1, pos.h, 1]} rotation={[Math.random()*0.2, 0, Math.random()*0.2]}>
+                                {/* Stem */}
+                                <mesh position={[0, 0, 0]}>
+                                    <cylinderGeometry args={[0.005, 0.005, 0.4, 4]} />
+                                    <meshStandardMaterial color="#4ade80" />
+                                </mesh>
+                                {/* Buds */}
+                                {Array.from({ length: 8 }).map((_, i) => (
+                                    <mesh key={i} position={[0, 0.1 + i * 0.04, 0]}>
+                                        <sphereGeometry args={[0.025 - i * 0.002, 6, 6]} />
+                                        <meshStandardMaterial color="#a78bfa" emissive="#7c3aed" emissiveIntensity={0.3} />
+                                    </mesh>
+                                ))}
+                            </group>
                         ))}
                     </group>
                 )}
@@ -907,30 +1032,35 @@ const Flower = ({ type, position, scale = 1, windFactor = 1, quality = 'medium' 
 
 const Grass = ({ position, windFactor = 1 }: { position: [number, number, number], windFactor?: number }) => {
     const groupRef = useRef<THREE.Group>(null);
-    const seed = useMemo(() => Math.random() * Math.PI * 2, []);
+    const seed = useMemo(() => Math.random() * 100, []);
     
     useFrame((state) => {
         if (groupRef.current) {
             const t = state.clock.getElapsedTime();
-            groupRef.current.rotation.x = Math.sin(t * 2 * windFactor + seed) * (0.05 * windFactor);
-            groupRef.current.rotation.z = Math.cos(t * 1.5 * windFactor + seed) * (0.03 * windFactor);
+            groupRef.current.rotation.x = Math.sin(t * 1 + seed) * (0.05 * windFactor);
+            groupRef.current.rotation.z = Math.cos(t * 0.8 + seed) * (0.05 * windFactor);
         }
     });
 
     return (
         <group position={position} ref={groupRef}>
             {/* Clump of blades */}
-            {Array.from({ length: 3 }).map((_, i) => (
-                <mesh 
-                    key={i} 
-                    position={[(i - 1) * 0.05, 0.15, 0]} 
-                    rotation={[0.1 * (i - 1), 0, 0]}
-                    castShadow
-                >
-                    <coneGeometry args={[0.02, 0.4, 3]} />
-                    <meshStandardMaterial color={i === 1 ? "#4ade80" : "#22c55e"} />
-                </mesh>
-            ))}
+            {Array.from({ length: 7 }).map((_, i) => {
+                const angle = (i / 7) * Math.PI * 2 + seed;
+                const r = 0.05 + Math.random() * 0.05;
+                const h = 0.3 + Math.random() * 0.2;
+                return (
+                    <mesh 
+                        key={i} 
+                        position={[Math.cos(angle)*r, h/2, Math.sin(angle)*r]} 
+                        rotation={[Math.random()*0.2, angle, Math.random()*0.2]}
+                        castShadow
+                    >
+                        <coneGeometry args={[0.015, h, 3]} />
+                        <meshStandardMaterial color={i % 2 === 0 ? "#4ade80" : "#22c55e"} />
+                    </mesh>
+                )
+            })}
         </group>
     );
 };
@@ -1292,6 +1422,53 @@ const Fireflies = ({ count = 20 }: { count?: number }) => {
     );
 };
 
+const FallingPetals = ({ count = 50, theme }: { count?: number, theme: any }) => {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const particles = useMemo(() => {
+    return Array.from({ length: count }, () => ({
+      position: [
+        (Math.random() - 0.5) * 20,
+        Math.random() * 10 + 5,
+        (Math.random() - 0.5) * 20
+      ],
+      rotation: [Math.random() * Math.PI, Math.random() * Math.PI, 0],
+      speed: Math.random() * 0.02 + 0.01,
+      wobble: Math.random() * 0.1
+    }));
+  }, [count]);
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    particles.forEach((p, i) => {
+      p.position[1] -= p.speed;
+      p.position[0] += Math.sin(state.clock.elapsedTime + i) * p.wobble;
+      p.rotation[0] += 0.01;
+      p.rotation[1] += 0.01;
+
+      if (p.position[1] < -0.1) {
+        p.position[1] = 10;
+        p.position[0] = (Math.random() - 0.5) * 20;
+        p.position[2] = (Math.random() - 0.5) * 20;
+      }
+
+      dummy.position.set(p.position[0], p.position[1], p.position[2]);
+      dummy.rotation.set(p.rotation[0], p.rotation[1], 0);
+      dummy.scale.set(0.6, 0.6, 0.6);
+      dummy.updateMatrix();
+      meshRef.current!.setMatrixAt(i, dummy.matrix);
+    });
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  });
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
+      <planeGeometry args={[0.1, 0.1]} />
+      <meshStandardMaterial color={theme.leaves[0]} side={THREE.DoubleSide} transparent opacity={0.8} />
+    </instancedMesh>
+  );
+};
+
 
 const StonePath = () => {
     return (
@@ -1325,6 +1502,7 @@ const LoveTree3D: React.FC<LoveTree3DProps> = ({
    const theme = THEMES[treeStyle] || THEMES['oak'];
    const [isQRUploadOpen, setIsQRUploadOpen] = useState(false);
    const [showExplosion, setShowExplosion] = useState(false);
+   const [shakeTree, setShakeTree] = useState(false);
    const [floatingTexts, setFloatingTexts] = useState<Array<{ id: number; text: string; position: [number, number, number]; color: string }>>([]);
    const prevLeafCount = useRef(leaves);
 
@@ -1494,7 +1672,10 @@ const LoveTree3D: React.FC<LoveTree3DProps> = ({
          )}
 
          <OrbitControls 
-            enablePan={false} 
+            makeDefault
+            enablePan={true} 
+            enableDamping={true}
+            dampingFactor={0.05}
             minPolarAngle={0} 
             maxPolarAngle={Math.PI / 2.1} 
             maxDistance={20} 
@@ -1502,13 +1683,31 @@ const LoveTree3D: React.FC<LoveTree3DProps> = ({
          />
 
          {/* Ground */}
-         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
-            <circleGeometry args={[20, 64]} />
-            <meshStandardMaterial color={theme.ground} />
-         </mesh>
+         <group position={[0, -0.1, 0]}>
+             <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+                <circleGeometry args={[25, 64]} />
+                <meshStandardMaterial color={theme.ground} roughness={1} />
+             </mesh>
+             {/* Terrain Variations (Low Hills) */}
+             {Array.from({ length: 15 }).map((_, i) => {
+                 const angle = (i / 15) * Math.PI * 2;
+                 const dist = 10 + Math.random() * 10;
+                 return (
+                     <mesh key={i} position={[Math.cos(angle)*dist, -1.2, Math.sin(angle)*dist]} scale={[1, 0.3, 1]}>
+                         <sphereGeometry args={[5, 16, 8]} />
+                         <meshStandardMaterial color={theme.ground} roughness={1} />
+                     </mesh>
+                 )
+             })}
+         </group>
 
          {/* Tree */}
-         <Tree theme={theme} scale={growthScale} leafCount={leaves} windFactor={windFactor} branchCount={branchCount} quality={graphicsQuality} />
+         <group onClick={() => {
+             setShakeTree(true);
+            setTimeout(() => setShakeTree(false), 500);
+         }}>
+             <Tree theme={theme} scale={growthScale} leafCount={leaves} windFactor={windFactor} branchCount={branchCount} quality={graphicsQuality} shake={shakeTree} />
+         </group>
          
           {/* Leaf Explosion */}
           {showExplosion && <LeafExplosion count={30} color={theme.particle} />}
@@ -1587,6 +1786,8 @@ const LoveTree3D: React.FC<LoveTree3DProps> = ({
              <GardenProp position={[-3.2, 0, -3]} type="fence" />
               
               <Pond />
+              <Pond />
+              <FallingPetals theme={theme} count={60} />
               <Fireflies />
               <StonePath />
            </group>

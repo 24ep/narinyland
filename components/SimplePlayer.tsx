@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 interface SimplePlayerProps {
-  url: string;
+  playlist: string[];
   volume?: number;
   setVolume?: (v: number) => void;
   playing?: boolean;
@@ -13,7 +13,7 @@ interface SimplePlayerProps {
 }
 
 const SimplePlayer: React.FC<SimplePlayerProps> = ({ 
-  url, 
+  playlist = [], 
   volume: controlledVolume, 
   setVolume: controlledSetVolume,
   playing: controlledPlaying,
@@ -24,6 +24,9 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
   const [internalPlaying, setInternalPlaying] = useState(false);
   const [internalVolume, setInternalVolume] = useState(1.0);
   const [internalMuted, setInternalMuted] = useState(true);
+  
+  // Track current song index
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
 
   // Use props if provided, otherwise internal state
   const playing = controlledPlaying ?? internalPlaying;
@@ -38,12 +41,44 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
   
   // Helper to extract YouTube ID
   const getYoutubeId = (url: string) => {
+    if (!url) return null;
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
   };
 
-  const videoId = getYoutubeId(url);
+  // Resume state from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('nari_music_state');
+      if (saved) {
+        const { index, timestamp } = JSON.parse(saved);
+        // Only restore if valid index
+        if (index >= 0 && index < playlist.length) {
+          setCurrentTrackIndex(index);
+          console.log('🎵 Resuming music from track', index);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load music state', e);
+    }
+  }, [playlist.length]); // Only run once or when playlist size changes significantly
+
+  // Persist current track index
+  useEffect(() => {
+    if (playlist.length > 0) {
+      localStorage.setItem('nari_music_state', JSON.stringify({
+        index: currentTrackIndex,
+        timestamp: Date.now() // We mostly care about track index for now
+      }));
+    }
+  }, [currentTrackIndex, playlist]);
+
+  const videoId = useMemo(() => {
+     if (!playlist || playlist.length === 0) return null;
+     const url = playlist[currentTrackIndex] || playlist[0];
+     return getYoutubeId(url);
+  }, [playlist, currentTrackIndex]);
 
   // Send commands to YouTube IFrame
   const sendCommand = (func: string, args: any[] = []) => {
@@ -55,6 +90,30 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
     }
   };
 
+  // Listen for YouTube API events (specifically ENDED state to auto-advance)
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Filter messages from YouTube
+      if (event.origin.includes('youtube.com')) {
+         try {
+           const data = JSON.parse(event.data);
+           // info: 0 means ENDED
+           if (data.event === 'onStateChange' && data.info === 0) {
+              console.log('🎵 Track ended, playing next...');
+              nextTrack();
+           }
+         } catch (e) { /* ignore */ }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [currentTrackIndex, playlist.length]);
+
+  const nextTrack = () => {
+    setCurrentTrackIndex(prev => (prev + 1) % playlist.length);
+  };
+
   // Sync state with YouTube via postMessage
   useEffect(() => {
     if (playing) {
@@ -62,7 +121,7 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
     } else {
       sendCommand('pauseVideo');
     }
-  }, [playing]);
+  }, [playing, videoId]); // Re-send play when videoId changes
 
   useEffect(() => {
     if (muted) {
@@ -71,7 +130,7 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
       sendCommand('unMute');
       sendCommand('setVolume', [volume * 100]);
     }
-  }, [muted, volume]);
+  }, [muted, volume, videoId]);
 
   // Initial interaction handler for autoplay compliance
   useEffect(() => {
@@ -79,6 +138,7 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
       console.log("User interaction detected, attempting to play music unmuted...");
       setMuted(false);
       setPlaying(true);
+      
       // Give it a tiny bit of time for the state to propagate then force unMute via command
       setTimeout(() => {
         sendCommand('unMute');
@@ -109,7 +169,9 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
           ref={iframeRef}
           width="10"
           height="10"
-          src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=${videoId}`}
+          // Adding enablejsapi=1 is crucial for postMessage control
+          // origin is required for security in some browsers
+          src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&mute=1&controls=0&modestbranding=1&loop=0&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
           title="YouTube Music Player"
           frameBorder="0"
           allow="autoplay; encrypted-media"

@@ -51,7 +51,7 @@ export interface LoveLetterMessage {
 }
 export interface AppConfig {
   appName: string;
-  musicUrl?: string;
+  musicPlaylist?: string[];
   anniversaryDate: string;
   treeStyle: string;
   viewMode?: "2d" | "3d";

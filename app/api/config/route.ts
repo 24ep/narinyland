@@ -48,8 +48,10 @@ export async function GET() {
       flowerType: config.flowerType,
       mixedFlowers: config.mixedFlowers,
       skyMode: config.skyMode,
+      petType: config.petType,
+      pets: config.pets,
       timelineDefaultRows: config.timelineDefaultRows,
-      musicUrl: config.musicUrl,
+      musicPlaylist: config.musicPlaylist || [],
       proposal: {
         questions: config.proposalQuestions,
         isAccepted: config.isProposalAccepted,
@@ -114,9 +116,12 @@ export async function PUT(request: Request) {
     if (daysPerFlower !== undefined) updateData.daysPerFlower = daysPerFlower;
     if (flowerType !== undefined) updateData.flowerType = flowerType;
     if (mixedFlowers !== undefined) updateData.mixedFlowers = mixedFlowers;
+    if (mixedFlowers !== undefined) updateData.mixedFlowers = mixedFlowers;
     if (skyMode !== undefined) updateData.skyMode = skyMode;
+    if (body.petType !== undefined) updateData.petType = body.petType;
+    if (body.pets !== undefined) updateData.pets = body.pets;
     if (timelineDefaultRows !== undefined) updateData.timelineDefaultRows = timelineDefaultRows;
-    if (musicUrl !== undefined) updateData.musicUrl = musicUrl;
+    if (body.musicPlaylist !== undefined) updateData.musicPlaylist = body.musicPlaylist;
     if (proposal) {
       if (proposal.questions !== undefined) updateData.proposalQuestions = proposal.questions;
       if (proposal.progress !== undefined) updateData.proposalProgress = proposal.progress;
