@@ -30,6 +30,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
   // File Upload State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState<number | null>(null); // index of item being uploaded
+  const [previewItem, setPreviewItem] = useState<{ url: string; type: 'image' | 'video' | 'audio' } | null>(null);
 
   // Fetch posts from a public Instagram profile (username-based, no token)
   const fetchInstagramProfile = async () => {
@@ -813,7 +814,13 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                 const isIG = item.url.includes('instagram.com') || item.url.includes('cdninstagram.com');
                 return (
                   <motion.div key={idx} layout className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex gap-4 items-center group relative">
-                    <div className="w-20 h-20 rounded-2xl bg-gray-100 overflow-hidden shrink-0 border relative flex items-center justify-center">
+                    <div 
+                      className="w-20 h-20 rounded-2xl bg-gray-100 overflow-hidden shrink-0 border relative flex items-center justify-center cursor-zoom-in group/thumb"
+                      onClick={() => {
+                        const type = isAudio(item.url) ? 'audio' : isVideo(item.url) ? 'video' : 'image';
+                        setPreviewItem({ url: item.url, type });
+                      }}
+                    >
                         {isAudio(item.url) ? (
                             <div className="text-3xl text-orange-400">
                                 <i className="fas fa-microphone"></i>
@@ -826,10 +833,13 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                             <img 
                               src={getPreviewUrl(item.url)} 
                               referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover" 
+                              className="w-full h-full object-cover transition-transform group-hover/thumb:scale-110" 
                               onError={(e) => (e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Crect width='150' height='150' fill='%23fef2f2'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23f87171' font-size='12'%3EInvalid%3C/text%3E%3C/svg%3E")} 
                             />
                         )}
+                        <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/10 transition-colors flex items-center justify-center">
+                           <i className="fas fa-search-plus text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity"></i>
+                        </div>
                         {isIG && <div className="absolute inset-0 bg-pink-500/10 pointer-events-none" />}
                         {isIG && <div className="absolute top-1 right-1 w-5 h-5 bg-gradient-to-tr from-yellow-400 to-purple-600 text-white flex items-center justify-center rounded-full text-[8px] shadow-sm"><i className="fab fa-instagram"></i></div>}
                     </div>
@@ -952,7 +962,11 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                        {item.media ? (
                           <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-white">
                              {item.media.type === 'image' && (
-                                <img src={item.media.url} className="w-12 h-12 rounded-lg object-cover border" />
+                                <img 
+                                  src={item.media.url} 
+                                  className="w-12 h-12 rounded-lg object-cover border cursor-zoom-in hover:brightness-90 transition-all" 
+                                  onClick={() => setPreviewItem({ url: (item.media as any).url, type: 'image' })}
+                                />
                              )}
                              {item.media.type === 'audio' && (
                                 <div className="flex-1 flex flex-col gap-1">
@@ -963,7 +977,10 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                                 </div>
                              )}
                              {item.media.type === 'video' && (
-                                <div className="flex-1 flex items-center gap-2 text-[10px] font-bold text-blue-500">
+                                <div 
+                                  className="flex-1 flex items-center gap-2 text-[10px] font-bold text-blue-500 cursor-pointer hover:bg-blue-50 p-1 rounded-lg transition-colors"
+                                  onClick={() => setPreviewItem({ url: (item.media as any).url, type: 'video' })}
+                                >
                                    <i className="fas fa-video"></i> Video Milestone
                                 </div>
                              )}
@@ -1063,6 +1080,75 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
           Save Changes ✨
         </button>
       </div>
+
+      {/* FULLSCREEN PREVIEW OVERLAY */}
+      <AnimatePresence>
+        {previewItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-10"
+            onClick={() => setPreviewItem(null)}
+          >
+            <motion.button
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute top-6 right-6 w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center text-2xl transition-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPreviewItem(null);
+              }}
+            >
+              <i className="fas fa-times"></i>
+            </motion.button>
+
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-full max-h-full flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+               {previewItem.type === 'image' && (
+                 <img 
+                   src={getPreviewUrl(previewItem.url)} 
+                   className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                   alt="Preview"
+                 />
+               )}
+               {previewItem.type === 'video' && (
+                 <video 
+                   src={previewItem.url} 
+                   className="max-w-full max-h-[85vh] rounded-lg shadow-2xl"
+                   controls
+                   autoPlay
+                 />
+               )}
+               {previewItem.type === 'audio' && (
+                 <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 min-w-[300px]">
+                    <div className="w-20 h-20 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center text-4xl">
+                      <i className="fas fa-microphone"></i>
+                    </div>
+                    <audio src={previewItem.url} controls className="w-full" />
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Audio Memory</p>
+                 </div>
+               )}
+               
+               <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 flex gap-4">
+                  <a 
+                    href={previewItem.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                  >
+                    <i className="fas fa-external-link-alt"></i> Open Original
+                  </a>
+               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
