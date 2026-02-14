@@ -4,12 +4,17 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const igUrl = searchParams.get('url');
+  const isPost = /instagram\.com\/(p|reel|tv)\//.test(igUrl || '');
+  const isCdn = /(cdninstagram|fbcdn)/.test(igUrl || '');
 
-  if (!igUrl || !/instagram\.com\/(p|reel|tv)\//.test(igUrl)) {
-    return NextResponse.json({ error: 'Invalid Instagram URL' }, { status: 400 });
+  if (!igUrl || (!isPost && !isCdn)) {
+    return NextResponse.json({ error: 'Invalid Instagram or Media URL' }, { status: 400 });
   }
 
   try {
+    if (isCdn) {
+        return proxyImage(igUrl);
+    }
     // Fetch the Instagram post page
     const response = await fetch(igUrl, {
       headers: {

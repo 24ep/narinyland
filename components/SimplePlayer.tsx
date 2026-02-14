@@ -4,12 +4,35 @@ import React, { useState, useEffect, useRef } from 'react';
 
 interface SimplePlayerProps {
   url: string;
+  volume?: number;
+  setVolume?: (v: number) => void;
+  playing?: boolean;
+  setPlaying?: (p: boolean) => void;
+  muted?: boolean;
+  setMuted?: (m: boolean) => void;
 }
 
-const SimplePlayer: React.FC<SimplePlayerProps> = ({ url }) => {
-  const [playing, setPlaying] = useState(false);
-  const [volume, setVolume] = useState(1.0);
-  const [muted, setMuted] = useState(true);
+const SimplePlayer: React.FC<SimplePlayerProps> = ({ 
+  url, 
+  volume: controlledVolume, 
+  setVolume: controlledSetVolume,
+  playing: controlledPlaying,
+  setPlaying: controlledSetPlaying,
+  muted: controlledMuted,
+  setMuted: controlledSetMuted
+}) => {
+  const [internalPlaying, setInternalPlaying] = useState(false);
+  const [internalVolume, setInternalVolume] = useState(1.0);
+  const [internalMuted, setInternalMuted] = useState(true);
+
+  // Use props if provided, otherwise internal state
+  const playing = controlledPlaying ?? internalPlaying;
+  const setPlaying = controlledSetPlaying ?? setInternalPlaying;
+  const volume = controlledVolume ?? internalVolume;
+  const setVolume = controlledSetVolume ?? setInternalVolume;
+  const muted = controlledMuted ?? internalMuted;
+  const setMuted = controlledSetMuted ?? setInternalMuted;
+
   const [error, setError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
@@ -53,8 +76,16 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({ url }) => {
   // Initial interaction handler for autoplay compliance
   useEffect(() => {
     const handleInteraction = () => {
+      console.log("User interaction detected, attempting to play music unmuted...");
       setMuted(false);
       setPlaying(true);
+      // Give it a tiny bit of time for the state to propagate then force unMute via command
+      setTimeout(() => {
+        sendCommand('unMute');
+        sendCommand('setVolume', [volume * 100]);
+        sendCommand('playVideo');
+      }, 500);
+      
       window.removeEventListener('click', handleInteraction);
       window.removeEventListener('touchstart', handleInteraction);
     };
@@ -66,7 +97,7 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({ url }) => {
       window.removeEventListener('click', handleInteraction);
       window.removeEventListener('touchstart', handleInteraction);
     };
-  }, []);
+  }, [volume]);
 
   if (!videoId) return null;
 
@@ -85,45 +116,7 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({ url }) => {
         ></iframe>
       </div>
 
-      <div className="flex items-center gap-2 bg-white/80 backdrop-blur-md p-2 rounded-full border border-pink-100 shadow-lg group hover:bg-white transition-all">
-        {/* Play/Pause / Unmute */}
-        <button 
-            onClick={() => {
-                if (muted) {
-                    setMuted(false);
-                    setPlaying(true);
-                } else {
-                    setPlaying(!playing);
-                }
-            }}
-            className="w-10 h-10 rounded-full bg-pink-500 hover:bg-pink-600 flex items-center justify-center text-white transition-colors shadow-md transition-all active:scale-95"
-        >
-            {playing ? (muted ? "🔇" : "🔊") : "▶️"}
-        </button>
-
-        <div className="flex flex-col pr-2">
-            <span className="text-[10px] font-bold text-pink-500 uppercase tracking-wider">
-                {muted && playing ? "Tap to Unmute" : playing ? "Now Playing" : "Paused"}
-            </span>
-            
-            <input 
-              type="range" 
-              min={0} 
-              max={1} 
-              step={0.1} 
-              value={muted ? 0 : volume} 
-              onChange={(e) => {
-                  const newVol = parseFloat(e.target.value);
-                  setVolume(newVol);
-                  setMuted(false);
-                  setPlaying(true);
-              }}
-              className="w-20 h-1 bg-pink-200 rounded-full appearance-none cursor-pointer mt-1"
-            />
-        </div>
-      </div>
-      
-      {error && <span className="text-red-500 text-xs font-bold px-2 bg-white rounded-full py-1 shadow-md">Error: {error}</span>}
+      {error && <span className="fixed bottom-4 left-4 z-50 text-red-500 text-xs font-bold px-2 bg-white rounded-full py-1 shadow-md">Error: {error}</span>}
     </div>
   );
 };

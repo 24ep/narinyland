@@ -40,7 +40,7 @@ export async function GET(
           const posts = edges.map((edge: any) => ({
             url: `https://www.instagram.com/p/${edge.node.shortcode}/`,
             shortcode: edge.node.shortcode,
-            thumbnail: edge.node.display_url,
+            thumbnail: edge.node.display_url || edge.node.thumbnail_src || `https://www.instagram.com/p/${edge.node.shortcode}/media/?size=l`,
           }));
 
           console.log(`[Instagram Scraper] v1 API Success! Found ${posts.length} posts for @${cleanUsername}`);

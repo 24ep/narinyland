@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Timeline from '../components/Timeline';
 import MemoryFrame from '../components/MemoryFrame';
@@ -28,6 +28,12 @@ const Home: React.FC = () => {
   const [isLetterOpen, setIsLetterOpen] = useState(false); 
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
   const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
+  const [isMobileStatsOpen, setIsMobileStatsOpen] = useState(false);
+  const [isVolumeModalOpen, setIsVolumeModalOpen] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(0.5);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(true);
+  const [isMusicMuted, setIsMusicMuted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [toast, setToast] = useState({ message: '', isVisible: false });
 
   const showToast = (message: string) => {
@@ -81,9 +87,17 @@ const Home: React.FC = () => {
   });
 
   const [galleryViewMode, setGalleryViewMode] = useState<'all' | 'public' | 'private'>('all');
+  const [activeTab, setActiveTab] = useState<'home' | 'timeline' | 'coupons' | 'letters'>('home'); // Add activeTab state
   const [configLoaded, setConfigLoaded] = useState(false);
 
   // ─── Load config & data from database on mount ─────────────────────────────
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -245,9 +259,25 @@ const Home: React.FC = () => {
       return;
     }
 
+    // Optimistic Update: Immediately update UI
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+       navigator.vibrate(50); // Haptic feedback
+    }
+
+    const prevStats = { ...loveStats }; // Backup for rollback
+    setLoveStats(prev => ({
+       ...prev,
+       leaves: prev.leaves + 1,
+       points: prev.points - 100
+    }));
+    setPetEmotion('happy');
+    setPetMessage("A new memory planted! 🌱");
+    setTimeout(() => setPetEmotion('neutral'), 3000);
+
     try {
       const res = await statsAPI.addLeaf();
       if (res.success) {
+         // Sync with server response to ensure consistency (especially for level ups)
          setLoveStats(prev => ({
            ...prev,
            leaves: res.leaves,
@@ -260,19 +290,18 @@ const Home: React.FC = () => {
          if (res.leveledUp) {
             setPetEmotion('excited');
             setPetMessage(`Level Up! Our garden is growing! Level ${res.level} 🌟`);
-         } else {
-            setPetEmotion('happy');
-            setPetMessage("A new memory planted! 🌱");
-            setTimeout(() => setPetEmotion('neutral'), 3000);
          }
+      } else {
+         // Revert on failure
+         setLoveStats(prevStats);
+         alert("Something went wrong growing the leaf.");
       }
     } catch (e) {
       console.error("Failed to add leaf:", e);
+      setLoveStats(prevStats); // Revert on error
       alert("Something went wrong growing the leaf.");
     }
   };
-
-
 
   const handleProposalStepChange = (progress: number) => {
     handleSetAppConfig(prev => ({
@@ -333,6 +362,33 @@ const Home: React.FC = () => {
     } catch (err) {
       console.error("Failed to redeem coupon:", err);
       alert("Failed to redeem coupon. Please try again.");
+    }
+  };
+
+  const handleAddCoupon = async (data: { title: string; emoji: string; desc: string; color: string; forPartner: string; points: number }) => {
+    try {
+      const newCoupon = await couponsAPI.create(data);
+      setAppConfig(prev => ({
+        ...prev,
+        coupons: [...prev.coupons, newCoupon]
+      }));
+    } catch (err) {
+      console.error("Failed to add coupon:", err);
+      alert("Failed to add coupon.");
+    }
+  };
+
+  const handleDeleteCoupon = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this coupon? This cannot be undone.")) return;
+    try {
+      await couponsAPI.delete(id);
+      setAppConfig(prev => ({
+        ...prev,
+        coupons: prev.coupons.filter(c => c.id !== id)
+      }));
+    } catch (err) {
+      console.error("Failed to delete coupon:", err);
+      alert("Failed to delete coupon.");
     }
   };
 
@@ -519,7 +575,24 @@ const Home: React.FC = () => {
       }
     };
 
-
+  const combinedInteractions = useMemo(() => {
+    const interactions = [...appConfig.timeline];
+    
+    if (appConfig.showCouponsOnTimeline) {
+      const couponInteractions: Interaction[] = appConfig.coupons
+        .filter(c => c.isRedeemed && c.redeemedAt)
+        .map(c => ({
+          id: `coupon-${c.id}`,
+          text: `Redeemed: ${c.emoji} ${c.title}`,
+          timestamp: c.redeemedAt instanceof Date ? c.redeemedAt : new Date(c.redeemedAt!),
+          type: 'system' as const,
+        }));
+      
+      interactions.push(...couponInteractions);
+    }
+    
+    return interactions;
+  }, [appConfig.timeline, appConfig.coupons, appConfig.showCouponsOnTimeline]);
 
   const daysTogether = Math.max(0, Math.floor((new Date().getTime() - new Date(appConfig.anniversaryDate).getTime()) / (1000 * 60 * 60 * 24)));
   const flowerCount = Math.floor(daysTogether / appConfig.daysPerFlower);
@@ -542,26 +615,14 @@ const Home: React.FC = () => {
              leaves={loveStats.leaves}
              points={loveStats.points}
              skyMode={appConfig.skyMode}
+             showQRCode={appConfig.showQRCode}
+             petType={appConfig.petType}
+             pets={appConfig.pets}
+             graphicsQuality={appConfig.graphicsQuality}
              onAddLeaf={handleAddLeaf}
            />
         </div>
 
-        {/* Floating Add Leaf Button */}
-        <div className="fixed bottom-24 right-4 z-50 flex flex-col items-center gap-2 group pointer-events-auto">
-             <span className={`text-xs font-black uppercase tracking-widest bg-black/50 text-white px-2 py-1 rounded backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap`}>
-                {loveStats.points >= 100 ? "Grow a leaf (-100 pts)" : "Need 100 points"}
-             </span>
-             <button 
-               onClick={handleAddLeaf}
-               disabled={loveStats.points < 100}
-               className={`
-                 w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-xl border-4 border-white transition-all transform hover:scale-110 active:scale-95
-                 ${loveStats.points >= 100 ? 'bg-gradient-to-br from-green-400 to-green-600 text-white cursor-pointer animate-bounce-slight' : 'bg-gray-300 text-gray-400 cursor-not-allowed grayscale'}
-               `}
-             >
-               🌱
-             </button>
-        </div>
       
       <AnimatePresence>
         {configLoaded && !hasAcceptedProposal && (
@@ -575,52 +636,132 @@ const Home: React.FC = () => {
       </AnimatePresence>
 
       {hasAcceptedProposal && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-5xl flex flex-col items-center z-10">
-          
-          <div className="relative w-full mb-12 flex flex-col items-center justify-center">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full flex flex-col z-10 relative">
+
+          {/* Tab Content Rendering */}
+          <div className="flex-1 w-full overflow-y-auto overflow-x-hidden pb-24"> {/* Added padding bottom for tab bar */}
              
-             {/* Love Forest & Pet Container */}
+             {activeTab === 'home' && (
+               <motion.div 
+                 initial={{ opacity: 0, scale: 0.95 }}
+                 animate={{ opacity: 1, scale: 1 }}
+                 exit={{ opacity: 0, scale: 0.95 }}
+                 transition={{ duration: 0.3 }}
+                 className="flex flex-col items-center w-full min-h-full pt-20"
+               >
+                 <MemoryFrame 
+                    isVisible={true} 
+                    items={appConfig.gallery} 
+                    style={appConfig.galleryStyle} 
+                    source={appConfig.gallerySource}
+                    username={appConfig.instagramUsername}
+                    viewMode={galleryViewMode}
+                    onViewModeChange={setGalleryViewMode}
+                    variant="sky"
+                 />
+                 {/* Spacer for Home view scrolling if needed */}
+                 <div className="h-24"></div> 
+               </motion.div>
+             )}
 
+             {activeTab === 'timeline' && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full flex justify-center pt-12 md:pt-24"
+                >
+                  <Timeline 
+                    interactions={combinedInteractions} 
+                    anniversaryDate={appConfig.anniversaryDate} 
+                    defaultRows={appConfig.timelineDefaultRows}
+                    onUpdateInteraction={handleUpdateTimeline}
+                    onDeleteInteraction={handleDeleteTimeline}
+                    onAddInteraction={handleAddTimeline}
+                    onOpenSpreadsheet={() => setIsSpreadsheetOpen(true)}
+                    cardScale={appConfig.timelineCardScale}
+                 />
+                </motion.div>
+             )}
 
-             
+             {activeTab === 'coupons' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full flex justify-center pt-12 md:pt-24"
+                >
+                  <LoveCoupons 
+                    coupons={appConfig.coupons} 
+                    partners={appConfig.partners} 
+                    onRedeem={handleRedeemCoupon}
+                    onDelete={handleDeleteCoupon}
+                    onAdd={handleAddCoupon}
+                  />
+                </motion.div>
+             )}
 
+             {activeTab === 'letters' && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full h-full flex justify-center pt-20 px-4"
+                >
+                  <LoveLetter 
+                    isOpen={true} 
+                    isInline={true}
+                    onClose={() => setActiveTab('home')} 
+                    messages={loveLetters}
+                    onSendMessage={handleSendMessage}
+                    partners={appConfig.partners}
+                  />
+                </motion.div>
+             )}
           </div>
 
+          {/* Bottom Navigation Tab Bar */}
+          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white/80 backdrop-blur-md border border-white/50 shadow-2xl rounded-full px-6 py-3 flex items-center gap-8 z-[70]">
+             <button 
+               onClick={() => setActiveTab('home')}
+               className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'home' ? 'text-pink-500 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+             >
+               <i className="fas fa-home text-xl"></i>
+               <span className="text-[10px] font-bold uppercase tracking-wide">Home</span>
+             </button>
 
-          
-          <MemoryFrame 
-            isVisible={true} 
-            items={appConfig.gallery} 
-            style={appConfig.galleryStyle} 
-            source={appConfig.gallerySource}
-            username={appConfig.instagramUsername}
-            viewMode={galleryViewMode}
-            onViewModeChange={setGalleryViewMode}
-            variant="sky"
-          />
-          
-          <div className="h-[65vh]"></div>
+             <button 
+               onClick={() => setActiveTab('timeline')}
+               className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'timeline' ? 'text-blue-500 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+             >
+               <i className="fas fa-calendar-alt text-xl"></i>
+               <span className="text-[10px] font-bold uppercase tracking-wide">Timeline</span>
+             </button>
 
-          {/* Timeline Section */}
-          <Timeline 
-             interactions={appConfig.timeline} 
-             anniversaryDate={appConfig.anniversaryDate} 
-             defaultRows={appConfig.timelineDefaultRows}
-             onUpdateInteraction={handleUpdateTimeline}
-             onDeleteInteraction={handleDeleteTimeline}
-             onAddInteraction={handleAddTimeline}
-             onOpenSpreadsheet={() => setIsSpreadsheetOpen(true)}
-          />
-          
-          <div className="h-24"></div>
+             <button 
+               onClick={() => setActiveTab('coupons')}
+               className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'coupons' ? 'text-purple-500 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+             >
+               <i className="fas fa-ticket-alt text-xl"></i>
+               <span className="text-[10px] font-bold uppercase tracking-wide">Coupons</span>
+             </button>
 
-
-
-          <LoveCoupons 
-            coupons={appConfig.coupons} 
-            partners={appConfig.partners} 
-            onRedeem={handleRedeemCoupon}
-          />
+             <button 
+               onClick={() => setActiveTab('letters')}
+               className={`flex flex-col items-center gap-1 transition-all duration-300 relative ${activeTab === 'letters' ? 'text-rose-500 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+             >
+               <i className="fas fa-envelope text-xl"></i>
+               <span className="text-[10px] font-bold uppercase tracking-wide">Letters</span>
+               {loveLetters.filter(l => !l.isRead).length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow-sm animate-pulse">
+                    {loveLetters.filter(l => !l.isRead).length}
+                  </span>
+               )}
+             </button>
+          </div>
 
         </motion.div>
       )}
@@ -629,110 +770,237 @@ const Home: React.FC = () => {
         <>
           {/* Fixed UI Overlays - Outside the scrollable content flow */}
           
-          {/* Config & Garden Stats - Top Left */}
-          <div className="fixed top-28 left-6 flex flex-col gap-4 z-[60]">
-            <button onClick={() => setIsEditDrawerOpen(true)} className="w-10 h-10 bg-white/80 backdrop-blur-md rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:bg-white transition-all transform hover:scale-110 border-2 border-white"><i className="fas fa-cog text-sm"></i></button>
-            
-            <motion.div 
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="bg-white/60 backdrop-blur-md p-4 rounded-3xl shadow-sm border-2 border-white/60 w-48 space-y-3"
-            >
-              <h4 className="text-[10px] font-black text-pink-500 uppercase tracking-[0.2em] border-b border-pink-100 pb-1">Garden Status</h4>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-[11px]">
-                  <span className="text-gray-500 font-bold">Relationship</span>
-                  <span className="font-black text-gray-800">{daysTogether} Days</span>
-                </div>
-                
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-gray-500 font-bold">Flowers</span>
-                    <span className="font-black text-pink-500">{flowerCount} 🌸</span>
-                  </div>
-                  <div className="text-[8px] font-black text-pink-300 uppercase leading-tight">
-                    1 flower every {appConfig.daysPerFlower} days of love
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-gray-500 font-bold">Leaves</span>
-                    <span className="font-black text-green-600">{loveStats.leaves} 🍃</span>
-                  </div>
-                  <div className="text-[8px] font-black text-green-300 uppercase leading-tight">
-                    Grown from coupon points
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+          {/* Config & Garden Stats - Persistently Visible */}
+          <div className="fixed top-4 right-4 md:right-6 flex items-center gap-2 md:gap-4 z-[60]">
+             <button 
+               onClick={() => setIsVolumeModalOpen(!isVolumeModalOpen)} 
+               className={`w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-all transform hover:scale-110 border backdrop-blur-md ${
+                 isMusicMuted ? 'bg-gray-500/40 text-white border-gray-400/50' : 'bg-white/40 text-pink-500 border-white/50'
+               }`}
+             >
+               <i className={`fas ${isMusicMuted ? 'fa-volume-mute' : 'fa-music'} text-xs`}></i>
+             </button>
+             <button onClick={() => setIsEditDrawerOpen(true)} className="w-10 h-10 bg-white/40 backdrop-blur-md rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:bg-white transition-all transform hover:scale-110 border border-white/50"><i className="fas fa-cog text-sm"></i></button>
           </div>
 
-          {/* Logo - Fixed Top Left */}
-          <div className="fixed top-6 left-6 z-50">
-            <Logo size={120} title={appConfig.appName} className="" />
-          </div>
-
-          {/* Enhanced XP Progress Display - Fixed Top Right */}
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="fixed top-6 right-6 w-full max-w-sm z-50"
-          >
-            <div className="bg-white/60 backdrop-blur-md rounded-2xl p-3 shadow-sm border-2 border-white/60 flex items-center gap-4 hover:shadow-md transition-shadow">
-              {/* Level Badge */}
-              <div className="w-12 h-12 bg-gradient-to-br from-yellow-300 to-amber-400 rounded-full flex items-center justify-center shadow-md border-2 border-white shrink-0 relative group">
-                <span className="font-pacifico text-white text-xl drop-shadow-sm pt-1">{loveStats.level}</span>
-                <div className="absolute -top-1 -right-1 bg-pink-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wide shadow-sm">Lvl</div>
-                <div className="absolute inset-0 rounded-full bg-white opacity-0 group-hover:opacity-20 transition-opacity"></div>
-              </div>
-              
-              {/* Progress Info */}
-              <div className="flex-1 flex flex-col justify-center gap-1.5">
-                  <div className="flex justify-between items-end text-pink-600">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-pink-400 flex flex-col gap-0.5">
-                        <span className="opacity-70">Growth Status</span>
-                        <div className="flex flex-wrap gap-2 text-[10px] font-bold">
-                           <span className="flex items-center gap-1 bg-green-100/80 px-1.5 py-0.5 rounded-md text-green-700" title="Total Leaves">🍃 {loveStats.leaves}</span>
-                           <span className="flex items-center gap-1 bg-yellow-100/80 px-1.5 py-0.5 rounded-md text-yellow-700 font-black" title="Total Combined Points">🪙 {loveStats.points}</span>
-                           <span className="flex items-center gap-1 bg-pink-100/80 px-1.5 py-0.5 rounded-md text-pink-600" title={`${appConfig.partners.partner1.name}'s Points`}>{appConfig.partners.partner1.avatar} {loveStats.partnerPoints?.partner1 || 0}</span>
-                           <span className="flex items-center gap-1 bg-blue-100/80 px-1.5 py-0.5 rounded-md text-blue-600" title={`${appConfig.partners.partner2.name}'s Points`}>{appConfig.partners.partner2.avatar} {loveStats.partnerPoints?.partner2 || 0}</span>
-                        </div>
-                      </span>
-                     <span className="text-[10px] font-black opacity-60 bg-white/50 px-2 py-1 rounded-full">{loveStats.xp} / {loveStats.level * 100} XP</span>
-                  </div>
-                 <div className="w-full h-3 bg-pink-50 rounded-full overflow-hidden border border-pink-100 relative shadow-inner">
-                    {/* Background Pattern */}
-                    <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, #fbcfe8 5px, #fbcfe8 10px)' }}></div>
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(100, loveStats.xp)}%` }}
-                      transition={{ type: "spring", stiffness: 40, damping: 15 }}
-                      className="h-full bg-gradient-to-r from-pink-400 via-rose-400 to-yellow-400 relative"
-                    >
-                      <div className="absolute top-0 right-0 bottom-0 w-2 bg-white/40 blur-[2px]"></div>
-                    </motion.div>
+          {/* Music Adjustment Modal */}
+          <AnimatePresence>
+            {isVolumeModalOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                className="fixed top-20 right-6 z-[70] bg-white/90 backdrop-blur-xl p-4 rounded-3xl shadow-2xl border border-pink-100 flex flex-col items-center gap-4 w-12"
+              >
+                 <label className="text-[8px] font-black text-pink-500 uppercase tracking-tighter w-full text-center mb-2">VOL</label>
+                 <div className="h-32 w-1.5 bg-gray-100 rounded-full relative overflow-hidden group">
+                    <input 
+                       type="range"
+                       min="0"
+                       max="1"
+                       step="0.01"
+                       value={isMusicMuted ? 0 : musicVolume}
+                       onChange={(e) => {
+                         setMusicVolume(parseFloat(e.target.value));
+                         setIsMusicMuted(false);
+                       }}
+                       className="absolute inset-0 w-32 h-1.5 appearance-none bg-transparent cursor-pointer -rotate-90 origin-left translate-y-[128px] translate-x-[-1px] z-10"
+                       style={{ width: '128px' }}
+                    />
+                    <div 
+                       className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-pink-500 to-rose-400 transition-all duration-150"
+                       style={{ height: `${(isMusicMuted ? 0 : musicVolume) * 100}%` }}
+                    />
                  </div>
+                 <button 
+                   onClick={() => setIsMusicMuted(!isMusicMuted)}
+                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${isMusicMuted ? 'bg-gray-100 text-gray-400' : 'bg-pink-100 text-pink-500'}`}
+                 >
+                   <i className={`fas ${isMusicMuted ? 'fa-volume-mute' : 'fa-volume-up'} text-[10px]`}></i>
+                 </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* CENTERED STATUS BAR - HOME ONLY */}
+          {activeTab === 'home' && (
+            <div 
+              className="fixed top-24 md:top-8 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col items-center pointer-events-auto cursor-pointer md:cursor-default"
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  setIsMobileStatsOpen(true);
+                }
+              }}
+            >
+              <motion.div 
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="flex items-center gap-4 md:gap-16 pb-1.5 md:pb-2"
+              >
+                  {/* Together Stat */}
+                  <div className="flex flex-col items-center">
+                    <span className="text-[7px] md:text-[10px] font-black text-pink-500 uppercase tracking-widest drop-shadow-sm opacity-80 group-hover:opacity-100 transition-opacity">Together</span>
+                    <span className="text-sm md:text-3xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-2">
+                       <i className="fas fa-heart text-red-500 animate-pulse text-[10px] md:text-xl"></i> {daysTogether} <span className="text-[10px] md:text-sm font-bold opacity-80">Days</span>
+                    </span>
+                  </div>
+
+                  <div className="w-px h-6 md:h-10 bg-white/20 hidden md:block"></div>
+
+                  {/* Garden Stats */}
+                  <div className="flex flex-col items-center">
+                    <span className="text-[7px] md:text-[10px] font-black text-pink-500 uppercase tracking-widest drop-shadow-sm opacity-80 group-hover:opacity-100 transition-opacity">Garden</span>
+                    <div className="flex items-center gap-2 md:gap-8">
+                       <div className="flex flex-col items-center">
+                          <span className="text-xs md:text-2xl font-bold text-white drop-shadow-[0_2px_4_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-sm md:text-2xl">🌸</span> {flowerCount}</span>
+                          <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Flowers</span>
+                       </div>
+                       <div className="flex flex-col items-center">
+                          <span className="text-xs md:text-2xl font-bold text-white drop-shadow-[0_2px_4_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-sm md:text-2xl">🍃</span> {loveStats.leaves}</span>
+                          <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Leaves</span>
+                       </div>
+                       <div className="flex flex-col items-center">
+                          <span className="text-xs md:text-2xl font-black text-yellow-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-[10px] md:text-base">⭐</span> {loveStats.level}</span>
+                          <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Level</span>
+                       </div>
+                       <div className="flex flex-col items-center">
+                          <span className="text-xs md:text-2xl font-bold text-amber-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-[10px] md:text-base">🪙</span> {loveStats.points}</span>
+                          <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Points</span>
+                       </div>
+                    </div>
+                  </div>
+              </motion.div>
+
+              {/* Minimal XP Bar Underneath */}
+              <div className="w-24 md:w-96 h-0.5 md:h-1 bg-white/10 rounded-full overflow-hidden mt-0.5 md:mt-1 border border-white/5 isolate relative">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(loveStats.xp % 100)}%` }}
+                    className="h-full bg-gradient-to-r from-pink-500 via-rose-400 to-yellow-400 shadow-[0_0_8px_rgba(244,114,182,0.5)]"
+                  />
+                  
+
               </div>
             </div>
-          </motion.div>
+          )}
 
-          {/* Mailbox Button */}
-          <motion.div className="fixed bottom-6 right-6 z-[60]" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-            <button onClick={() => setIsLetterOpen(true)} className="bg-white p-5 rounded-full shadow-2xl text-4xl border-2 border-pink-50 flex items-center justify-center hover:bg-pink-50 transition-colors">
-              <span className="relative">
-                💌
-                {loveLetters.length > 0 && (
-                   <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                     {loveLetters.length}
-                   </span>
+          {/* Logo - Fixed Top Left on Desktop, Centered on Mobile */}
+          <div className="fixed top-4 md:top-6 left-1/2 md:left-6 transform -translate-x-1/2 md:translate-x-0 z-50">
+            <Logo 
+              size={isMobile ? 80 : 120} 
+              title={appConfig.appName} 
+              className="" 
+            />
+          </div>
+
+            {/* Grow Leaf Button (Visible only if points >= 100) */}
+            <div className="fixed right-6 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-4 items-end">
+              {/* Grow Leaf Button (Visible only if points >= 100) */}
+              <AnimatePresence>
+                {loveStats.points >= 100 && activeTab === 'home' && (
+                  <motion.button
+                    initial={{ scale: 0, opacity: 0, x: 20 }}
+                    animate={{ scale: 1, opacity: 1, x: 0 }}
+                    exit={{ scale: 0, opacity: 0, x: 20 }}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={handleAddLeaf}
+                    className="group relative flex flex-col items-center"
+                    title="Grow a new leaf (Costs 100 points)"
+                  >
+                    <div className="absolute -top-12 right-0 bg-black/80 text-white text-[10px] font-black px-3 py-1.5 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity animate-bounce">
+                       GROW LEAF! 🌱 -100 🪙
+                    </div>
+                    <div className="w-16 h-16 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full shadow-[0_20px_50px_rgba(16,185,129,0.4)] flex items-center justify-center text-3xl relative overflow-hidden group">
+                       <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                       <motion.span 
+                         animate={{ rotate: [0, 10, -10, 0] }}
+                         transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                       >
+                         🍃
+                       </motion.span>
+                    </div>
+                  </motion.button>
                 )}
-              </span>
-            </button>
-          </motion.div>
+              </AnimatePresence>
 
+           </div>
 
+          {/* Mobile Garden Status Drawer */}
+          <AnimatePresence>
+            {isMobileStatsOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end md:hidden"
+                onClick={() => setIsMobileStatsOpen(false)}
+              >
+                <motion.div
+                  initial={{ y: "100%" }}
+                  animate={{ y: 0 }}
+                  exit={{ y: "100%" }}
+                  transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                  className="bg-white w-full rounded-t-3xl p-6 pb-12 space-y-6"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="flex justify-center mb-2">
+                    <div className="w-12 h-1.5 bg-gray-200 rounded-full"></div>
+                  </div>
+
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                     <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-gradient-to-br from-yellow-300 to-amber-400 rounded-full flex items-center justify-center text-2xl font-black text-white shadow-lg border-4 border-white">
+                          {loveStats.level}
+                        </div>
+                        <div>
+                           <h3 className="font-pacifico text-2xl text-gray-800">Garden Status</h3>
+                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{loveStats.xp} / {loveStats.level * 100} XP</p>
+                        </div>
+                     </div>
+                     <button onClick={() => setIsEditDrawerOpen(true)} className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100">
+                        <i className="fas fa-cog"></i>
+                     </button>
+                  </div>
+
+                  {/* Mobile XP Bar */}
+                  <div className="w-full h-4 bg-pink-50 rounded-full overflow-hidden border border-pink-100 relative shadow-inner">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(100, loveStats.xp)}%` }}
+                        className="h-full bg-gradient-to-r from-pink-400 via-rose-400 to-yellow-400 relative"
+                      />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="bg-pink-50/50 p-4 rounded-2xl border border-pink-100 flex flex-col items-center text-center gap-1">
+                        <span className="text-2xl">🌸</span>
+                        <span className="font-black text-gray-800 text-lg">{flowerCount}</span>
+                        <span className="text-[9px] font-bold text-pink-400 uppercase tracking-widest">Flowers Bloomed</span>
+                     </div>
+                     <div className="bg-green-50/50 p-4 rounded-2xl border border-green-100 flex flex-col items-center text-center gap-1">
+                        <span className="text-2xl">🍃</span>
+                        <span className="font-black text-gray-800 text-lg">{loveStats.leaves}</span>
+                        <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Leaves Grown</span>
+                     </div>
+                  </div>
+
+                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3">
+                      <div className="flex justify-between items-center text-xs font-bold text-gray-600">
+                         <span>Relationship Length</span>
+                         <span className="font-black">{daysTogether} Days</span>
+                      </div>
+                      <div className="w-full h-px bg-gray-200"></div>
+                      <div className="flex justify-between items-center text-xs font-bold text-gray-600">
+                         <span>Next Flower In</span>
+                         <span className="font-black text-pink-500">{appConfig.daysPerFlower - (daysTogether % appConfig.daysPerFlower)} Days</span>
+                      </div>
+                   </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <LoveLetter 
             isOpen={isLetterOpen} 
@@ -754,7 +1022,15 @@ const Home: React.FC = () => {
             isVisible={toast.isVisible} 
             onClose={() => setToast(prev => ({ ...prev, isVisible: false }))} 
           />
-          <SimplePlayer url="https://www.youtube.com/watch?v=igx8-BdblEI" />
+          <SimplePlayer 
+            url={appConfig.musicUrl || "https://www.youtube.com/watch?v=igx8-BdblEI"} 
+            volume={musicVolume}
+            setVolume={setMusicVolume}
+            playing={isMusicPlaying}
+            setPlaying={setIsMusicPlaying}
+            muted={isMusicMuted}
+            setMuted={setIsMusicMuted}
+          />
           
           <TimelineSpreadsheet 
             isOpen={isSpreadsheetOpen}

@@ -21,6 +21,10 @@ interface LoveTreeProps {
   points: number;
   onAddLeaf: () => void;
   skyMode?: string;
+  showQRCode?: boolean;
+  petType?: string;
+  pets?: Array<{ id: string; type: string; name?: string }>;
+  graphicsQuality?: 'low' | 'medium' | 'high';
 }
 
 const LoveTree: React.FC<LoveTreeProps> = (props) => {

@@ -17,6 +17,7 @@ interface EditDrawerProps {
 
 const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setConfig, onSave }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'proposal' | 'gallery' | 'timeline' | 'coupons'>('general');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   
   // Local draft state so changes only apply when "Save" is clicked
   const [localConfig, setLocalConfig] = useState<AppConfig>(config);
@@ -56,8 +57,8 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
       // Add the found posts to the gallery (avoid duplicates)
       const existingUrls = new Set(localConfig.gallery.map((g: any) => g.url));
       const newItems = data.posts
-        .filter((p: any) => !existingUrls.has(p.url))
-        .map((p: any) => ({ url: p.url, privacy: 'public' as const }));
+        .filter((p: any) => !existingUrls.has(p.thumbnail || p.url))
+        .map((p: any) => ({ url: p.thumbnail || p.url, privacy: 'public' as const }));
 
       if (newItems.length === 0) {
         setIgProfileResult(`✅ All ${data.postCount} posts from @${username} are already in gallery`);
@@ -220,6 +221,47 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
     }
   };
 
+  const handleMultiFileUpload = async (files: FileList | File[]) => {
+    const filesArray = Array.from(files);
+    setIsFetchingIG(true); // Reusing fetch state for upload indicator if needed, or just let it be
+    try {
+      const uploadPromises = filesArray.map(file => uploadAPI.upload(file, 'gallery'));
+      const results = await Promise.all(uploadPromises);
+      
+      const newItems = results.map(res => ({
+        url: res.url,
+        privacy: 'public' as const
+      }));
+
+      updateLocal(prev => ({
+        ...prev,
+        gallery: [...prev.gallery, ...newItems]
+      }));
+    } catch (err: any) {
+      alert(`Some uploads failed: ${err.message}`);
+    } finally {
+      setIsFetchingIG(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await handleMultiFileUpload(e.dataTransfer.files);
+    }
+  };
+
   const handleTimelineFileUpload = async (id: string, file: File) => {
     try {
       const type = file.type.startsWith('audio') ? 'audio' : file.type.startsWith('video') ? 'video' : 'image';
@@ -266,6 +308,32 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
     updateLocal(prev => ({ ...prev, coupons: [...prev.coupons, newCoupon] }));
   };
 
+  const handlePetChange = (id: string, field: string, value: any) => {
+    updateLocal(prev => ({
+      ...prev,
+      pets: (prev.pets || []).map(p => p.id === id ? { ...p, [field]: value } : p)
+    }));
+  };
+
+  const addPet = () => {
+    const newPet = {
+      id: Date.now().toString(),
+      type: 'dog',
+      name: 'New Friend'
+    };
+    updateLocal(prev => ({
+      ...prev,
+      pets: [...(prev.pets || []), newPet]
+    }));
+  };
+
+  const removePet = (id: string) => {
+    updateLocal(prev => ({
+      ...prev,
+      pets: (prev.pets || []).filter(p => p.id !== id)
+    }));
+  };
+
   const updateProposalQuestion = (index: number, value: string) => {
     updateLocal(prev => {
       const newQuestions = [...prev.proposal.questions];
@@ -304,8 +372,8 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
   // Helper to transform Instagram URLs for the preview
   const getPreviewUrl = (url: string) => {
     if (!url) return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Crect width='150' height='150' fill='%23f3f4f6'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239ca3af' font-size='12'%3EPaste Link%3C/text%3E%3C/svg%3E";
-    // If it's an Instagram post URL, proxy through our backend
-    if (/instagram\.com\/(p|reel|tv)\//.test(url)) {
+    // If it's an Instagram post URL or CDN URL, proxy through our backend
+    if (/instagram\.com\/(p|reel|tv)\//.test(url) || /(cdninstagram|fbcdn)/.test(url)) {
       return `/api/instagram/image?url=${encodeURIComponent(url)}`;
     }
     return url;
@@ -313,10 +381,10 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
 
   return (
     <motion.div
-      initial={{ x: "100%" }}
-      animate={{ x: 0 }}
-      exit={{ x: "100%" }}
-      className="fixed inset-y-0 right-0 w-full md:w-[550px] bg-white shadow-2xl z-[100] flex flex-col"
+      initial={{ x: "100%", opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: "100%", opacity: 0 }}
+      className="fixed inset-y-0 right-0 w-full md:w-[550px] md:top-6 md:right-6 md:bottom-6 md:h-[calc(100vh-3rem)] bg-white shadow-2xl z-[100] flex flex-col md:rounded-[3rem] overflow-hidden"
     >
       {/* Header */}
       <div className="p-6 border-b flex justify-between items-center bg-white shrink-0">
@@ -404,6 +472,90 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                       <option value="golden">Golden ☀️</option>
                     </select>
                   </div>
+                  <div className="col-span-2 border-t pt-4 mt-2">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-[10px] font-black text-pink-500 uppercase tracking-widest ml-1">Dynamic Pets Management</label>
+                      <button 
+                        onClick={addPet}
+                        className="bg-pink-100 text-pink-600 text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest hover:bg-pink-200 transition-all"
+                      >
+                        + Add Pet
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {/* Show old single pet if pets array is empty */}
+                      {(!localConfig.pets || localConfig.pets.length === 0) && (
+                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center gap-4">
+                           <div className="flex-1">
+                              <label className="block text-[8px] font-black text-gray-400 uppercase mb-1">Primary Pet Type</label>
+                              <select 
+                                value={localConfig.petType || 'cat'} 
+                                onChange={(e) => handleInputChange('petType', e.target.value)}
+                                className="w-full bg-white border border-gray-200 rounded-xl p-2 text-xs font-bold outline-none"
+                              >
+                                <option value="cat">Fluffy Cat 🐱</option>
+                                <option value="dog">Loyal Dog 🐶</option>
+                                <option value="rabbit">Soft Rabbit 🐰</option>
+                                <option value="panda">Chubby Panda 🐼</option>
+                                <option value="fox">Red Fox 🦊</option>
+                              </select>
+                           </div>
+                           <p className="text-[9px] text-gray-400 italic max-w-[120px]">This is your legacy pet. Add more to go dynamic! ✨</p>
+                        </div>
+                      )}
+
+                      {/* Render Multiple Pets */}
+                      {(localConfig.pets || []).map((pet, idx) => (
+                        <motion.div 
+                          key={pet.id}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="p-4 bg-pink-50/30 rounded-2xl border border-pink-100 flex items-center gap-3"
+                        >
+                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm border border-pink-50">
+                            {pet.type === 'cat' && '🐱'}
+                            {pet.type === 'dog' && '🐶'}
+                            {pet.type === 'rabbit' && '🐰'}
+                            {pet.type === 'panda' && '🐼'}
+                            {pet.type === 'fox' && '🦊'}
+                          </div>
+                          <div className="flex-1 grid grid-cols-2 gap-2">
+                             <div>
+                                <label className="block text-[7px] font-black text-pink-400 uppercase mb-0.5">Pet Name</label>
+                                <input 
+                                  type="text"
+                                  value={pet.name || ''}
+                                  onChange={(e) => handlePetChange(pet.id, 'name', e.target.value)}
+                                  className="w-full bg-white border border-pink-50 rounded-lg p-1.5 text-[10px] font-bold outline-none"
+                                  placeholder="Name..."
+                                />
+                             </div>
+                             <div>
+                                <label className="block text-[7px] font-black text-pink-400 uppercase mb-0.5">Animal Type</label>
+                                <select 
+                                  value={pet.type} 
+                                  onChange={(e) => handlePetChange(pet.id, 'type', e.target.value)}
+                                  className="w-full bg-white border border-pink-50 rounded-lg p-1.5 text-[10px] font-bold outline-none"
+                                >
+                                  <option value="cat">Cat 🐱</option>
+                                  <option value="dog">Dog 🐶</option>
+                                  <option value="rabbit">Rabbit 🐰</option>
+                                  <option value="panda">Panda 🐼</option>
+                                  <option value="fox">Fox 🦊</option>
+                                </select>
+                             </div>
+                          </div>
+                          <button 
+                            onClick={() => removePet(pet.id)}
+                            className="w-8 h-8 flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                          >
+                            <i className="fas fa-trash-alt text-xs"></i>
+                          </button>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
                   <div className="col-span-2">
                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest ml-1">Sky Time</label>
                     <select 
@@ -416,22 +568,42 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                       <option value="night">Always Night 🌙</option>
                     </select>
                   </div>
+                  <div className="col-span-2 bg-pink-50/30 p-4 rounded-2xl flex items-center justify-between border border-pink-50">
+                     <div>
+                        <p className="text-xs font-bold text-gray-800 flex items-center gap-2 italic">
+                           <i className="fas fa-qrcode text-pink-500"></i> Show Mobile Upload QR
+                        </p>
+                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 ml-6">Floating QR code at bottom-left</p>
+                     </div>
+                     <button 
+                       onClick={() => handleInputChange('showQRCode', !localConfig.showQRCode)}
+                       className={`w-12 h-6 rounded-full p-1 transition-all flex items-center ${localConfig.showQRCode ? 'bg-pink-500 justify-end' : 'bg-gray-200 justify-start'}`}
+                     >
+                        <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-sm" />
+                     </button>
+                  </div>
                   <div className="col-span-2 mt-2">
                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest ml-1">Example View Mode</label>
                      <div className="flex bg-gray-100 p-1 rounded-2xl">
                         <button 
-                           onClick={() => handleInputChange('viewMode', '2d')}
-                           className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${localConfig.viewMode === '2d' ? 'bg-white text-gray-800 shadow-md' : 'text-gray-400'}`}
-                        >
-                           2D Illustrative
-                        </button>
-                        <button 
                            onClick={() => handleInputChange('viewMode', '3d')}
-                           className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${localConfig.viewMode !== '2d' ? 'bg-white text-pink-500 shadow-md' : 'text-gray-400'}`}
+                           className="flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 bg-white text-pink-500 shadow-md"
                         >
                            <i className='fas fa-cube'></i> 3D Garden
                         </button>
                      </div>
+                  </div>
+                  <div className="col-span-2 mt-2">
+                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest ml-1">Graphics Quality</label>
+                     <select 
+                       value={localConfig.graphicsQuality || 'medium'} 
+                       onChange={(e) => handleInputChange('graphicsQuality', e.target.value)}
+                       className="w-full border-2 border-gray-50 rounded-2xl p-4 focus:border-pink-200 outline-none bg-white font-bold text-sm"
+                     >
+                       <option value="low">Low (Fastest) ⚡</option>
+                       <option value="medium">Medium (Balanced) ⚖️</option>
+                       <option value="high">High (Best Visuals) ✨</option>
+                     </select>
                   </div>
                 </div>
               </div>
@@ -802,31 +974,67 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                 </AnimatePresence>
              </div>
 
-             <div className="flex justify-between items-center px-2">
+             <div className="flex justify-between items-center px-1 mb-2">
                <h3 className="font-black text-gray-700 uppercase text-[11px] tracking-widest">Memories & Links</h3>
-               <button onClick={addGalleryImage} className="bg-blue-500 text-white text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest hover:bg-blue-600 transition-all shadow-md">
-                  + Add Item
-               </button>
+             </div>
+
+             {/* Drag & Drop Zone */}
+             <div 
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => {
+                   const input = document.createElement('input');
+                   input.type = 'file';
+                   input.multiple = true;
+                   input.accept = 'image/*,video/*,audio/*';
+                   input.onchange = (e) => {
+                      const files = (e.target as HTMLInputElement).files;
+                      if(files) handleMultiFileUpload(files);
+                   };
+                   input.click();
+                }}
+                className={`
+                  relative group cursor-pointer transition-all duration-300
+                  border-2 border-dashed rounded-3xl py-8 flex flex-col items-center justify-center gap-3 mb-6
+                  ${isDraggingOver ? 'border-pink-500 bg-pink-50' : 'border-gray-200 hover:border-pink-300 hover:bg-gray-50'}
+                `}
+             >
+                <div className={`p-4 rounded-full transition-colors ${isDraggingOver ? 'bg-pink-100' : 'bg-gray-100 group-hover:bg-pink-50'}`}>
+                   <i className={`fas fa-cloud-upload-alt text-2xl ${isDraggingOver ? 'text-pink-600' : 'text-gray-400 group-hover:text-pink-400'}`}></i>
+                </div>
+                <div className="text-center">
+                   <p className="text-xs font-bold text-gray-600">
+                      {isDraggingOver ? 'Drop files now!' : 'Click or Drag files here'}
+                   </p>
+                   <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">
+                      Supports JPG, PNG, MP4, MP3
+                   </p>
+                </div>
              </div>
              
-             <div className="space-y-4">
+             {/* Gallery Grid */}
+             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {localConfig.gallery.map((item, idx) => {
                 const isIG = item.url.includes('instagram.com') || item.url.includes('cdninstagram.com');
+                const isVid = isVideo(item.url);
+                const isAud = isAudio(item.url);
+                
                 return (
-                  <motion.div key={idx} layout className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex gap-4 items-center group relative">
+                  <motion.div key={idx} layout className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-2 group relative aspect-[4/5] hover:shadow-md transition-shadow">
                     <div 
-                      className="w-20 h-20 rounded-2xl bg-gray-100 overflow-hidden shrink-0 border relative flex items-center justify-center cursor-zoom-in group/thumb"
+                      className="flex-1 w-full rounded-xl bg-gray-100 overflow-hidden relative cursor-zoom-in group/thumb"
                       onClick={() => {
-                        const type = isAudio(item.url) ? 'audio' : isVideo(item.url) ? 'video' : 'image';
+                        const type = isAud ? 'audio' : isVid ? 'video' : 'image';
                         setPreviewItem({ url: item.url, type });
                       }}
                     >
-                        {isAudio(item.url) ? (
-                            <div className="text-3xl text-orange-400">
+                        {isAud ? (
+                            <div className="absolute inset-0 flex items-center justify-center text-3xl text-orange-400">
                                 <i className="fas fa-microphone"></i>
                             </div>
-                        ) : isVideo(item.url) ? (
-                            <div className="text-3xl text-blue-400">
+                        ) : isVid ? (
+                            <div className="absolute inset-0 flex items-center justify-center text-3xl text-blue-400">
                                 <i className="fas fa-video"></i>
                             </div>
                         ) : (
@@ -841,66 +1049,60 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                            <i className="fas fa-search-plus text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity"></i>
                         </div>
                         {isIG && <div className="absolute inset-0 bg-pink-500/10 pointer-events-none" />}
-                        {isIG && <div className="absolute top-1 right-1 w-5 h-5 bg-gradient-to-tr from-yellow-400 to-purple-600 text-white flex items-center justify-center rounded-full text-[8px] shadow-sm"><i className="fab fa-instagram"></i></div>}
+                        {isIG && <div className="absolute top-1 right-1 w-4 h-4 bg-gradient-to-tr from-yellow-400 to-purple-600 text-white flex items-center justify-center rounded-full text-[6px] shadow-sm"><i className="fab fa-instagram"></i></div>}
                     </div>
-                    <div className="flex-1 space-y-2">
-                        <input 
-                          type="text" 
-                          placeholder={isIG ? "IG Link" : "Image/Audio/Video URL"}
-                          value={item.url} 
-                          onChange={(e) => handleGalleryUrlChange(idx, e.target.value)}
-                          className={`w-full border-2 border-gray-50 rounded-xl px-3 py-2 text-[11px] font-mono text-gray-600 focus:border-blue-200 outline-none ${isIG ? 'bg-pink-50/20 border-pink-100' : ''}`}
-                        />
-                        {isAudio(item.url) && (
-                          <div className="w-full px-1">
-                             <audio controls src={item.url} className="w-full h-8 opacity-70" />
-                          </div>
-                        )}
-                        <div className="flex items-center justify-between">
-                           <div className="flex gap-2">
-                             <button 
-                               onClick={() => toggleGalleryPrivacy(idx)}
-                               className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-all border ${item.privacy === 'private' ? 'bg-purple-600 text-white border-purple-600' : 'bg-gray-50 text-gray-400 border-gray-200'}`}
-                             >
-                               <i className={`fas ${item.privacy === 'private' ? 'fa-lock' : 'fa-eye'} mr-1.5`}></i>
-                               {item.privacy === 'private' ? 'Private' : 'Public'}
-                             </button>
-                             <button
-                               onClick={() => {
-                                 const input = document.createElement('input');
-                                 input.type = 'file';
-                                 input.accept = 'image/*';
-                                 input.onchange = (e) => {
-                                   const file = (e.target as HTMLInputElement).files?.[0];
-                                   if (file) handleFileUpload(idx, file);
-                                 };
-                                 input.click();
-                               }}
-                               disabled={isUploading === idx}
-                               className="text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-blue-50 text-blue-500 border border-blue-100 hover:bg-blue-100 transition-all flex items-center gap-1.5"
-                             >
-                               {isUploading === idx ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-cloud-upload-alt"></i>}
-                               {isUploading === idx ? 'UPLOADING...' : 'UPLOAD'}
-                             </button>
-                           </div>
-                           <button onClick={() => removeGalleryImage(idx)} className="text-gray-300 hover:text-red-500 transition-colors p-2">
-                             <i className="fas fa-trash-alt"></i>
+
+                    {/* Compact Controls */}
+                    <div className="flex items-center gap-1.5 px-1">
+                        <div className="flex-1 min-w-0">
+                           {/* Privacy Toggle as a tiny dot/icon */}
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); toggleGalleryPrivacy(idx); }}
+                             className={`w-full text-xs font-bold py-1 px-2 rounded-lg flex items-center justify-center gap-1 transition-colors ${item.privacy === 'public' ? 'bg-green-50 text-green-500' : 'bg-red-50 text-red-500'}`}
+                           >
+                             <i className={`fas fa-${item.privacy === 'public' ? 'globe' : 'lock'} text-[9px]`}></i>
+                             <span className="text-[9px] uppercase tracking-wider">{item.privacy === 'public' ? 'Public' : 'Private'}</span>
                            </button>
                         </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); removeGalleryImage(idx); }}
+                          className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                        >
+                          <i className="fas fa-trash-alt text-[10px]"></i>
+                        </button>
                     </div>
                   </motion.div>
-                );
-              })}
-            </div>
+                 );
+               })}
+             </div>
           </motion.div>
         )}
 
         {/* Other tabs follow the same pattern, simplified for brevity here */}
         {activeTab === 'timeline' && (
            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center px-1">
                  <h3 className="font-black text-gray-700 uppercase text-[11px] tracking-widest">Our Story</h3>
                  <button onClick={addTimelineEvent} className="bg-pink-500 text-white text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md">+ New Event</button>
+              </div>
+
+              {/* Timeline Card Scaling */}
+              <div className="bg-gray-50/50 p-4 rounded-2xl border border-gray-100 space-y-3">
+                 <div className="flex justify-between items-center px-1">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Card Sizing (Desktop)</p>
+                    <span className="text-pink-500 font-bold text-[10px]">
+                       {Math.round((localConfig.timelineCardScale || 1.0) * 100)}%
+                    </span>
+                 </div>
+                 <input 
+                    type="range"
+                    min="0.5"
+                    max="1.5"
+                    step="0.05"
+                    value={localConfig.timelineCardScale || 1.0}
+                    onChange={(e) => handleInputChange('timelineCardScale', parseFloat(e.target.value))}
+                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                 />
               </div>
               {localConfig.timeline.map(item => (
                  <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-3">
@@ -1002,7 +1204,22 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
 
         {activeTab === 'coupons' && (
            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="bg-pink-50/30 p-4 rounded-2xl flex items-center justify-between border border-pink-50 mb-4">
+                 <div>
+                    <p className="text-xs font-bold text-gray-800 flex items-center gap-2 italic">
+                       <i className="fas fa-history text-pink-500"></i> Show Redeemed on Timeline
+                    </p>
+                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 ml-6">Display used coupons in your story</p>
+                 </div>
+                 <button 
+                   onClick={() => handleInputChange('showCouponsOnTimeline', !localConfig.showCouponsOnTimeline)}
+                   className={`w-12 h-6 rounded-full p-1 transition-all flex items-center ${localConfig.showCouponsOnTimeline ? 'bg-pink-500 justify-end' : 'bg-gray-200 justify-start'}`}
+                 >
+                    <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-sm" />
+                 </button>
+              </div>
+
+              <div className="flex justify-between items-center px-1">
                  <h3 className="font-black text-gray-700 uppercase text-[11px] tracking-widest">Gifts & Vouchers</h3>
                  <button onClick={addCoupon} className="bg-purple-600 text-white text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md">+ Add Coupon</button>
               </div>
@@ -1019,14 +1236,14 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                          type="text" 
                          value={coupon.title} 
                          onChange={(e) => handleCouponChange(coupon.id, 'title', e.target.value)}
-                         className="flex-1 border rounded-xl p-3 font-bold text-sm"
+                         className="flex-1 border-2 border-gray-100 rounded-xl p-4 font-black text-base focus:border-purple-200 outline-none transition-all"
                        />
                     </div>
                     <input 
                       type="text" 
                       value={coupon.desc} 
                       onChange={(e) => handleCouponChange(coupon.id, 'desc', e.target.value)}
-                      className="w-full border rounded-xl p-3 text-xs"
+                      className="w-full border-2 border-gray-100 rounded-xl p-4 text-sm font-bold focus:border-purple-200 outline-none transition-all"
                       placeholder="Coupon description..."
                     />
                      <div className="flex gap-2 items-center">
@@ -1037,22 +1254,42 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                            step="100"
                            value={coupon.points || 0}
                            onChange={(e) => handleCouponChange(coupon.id, 'points', parseInt(e.target.value))}
-                           className="w-20 border rounded-xl p-2 text-xs font-bold"
+                           className="w-24 border-2 border-gray-100 rounded-xl p-3 text-sm font-bold focus:border-purple-200 outline-none transition-all"
                         />
                      </div>
                     <div className="flex justify-between items-center">
-                       <select 
-                         value={coupon.for} 
-                         onChange={(e) => handleCouponChange(coupon.id, 'for', e.target.value)}
-                         className="text-[10px] font-black border rounded-lg p-1 bg-gray-50 uppercase"
-                       >
-                          <option value="partner1">Her</option>
-                          <option value="partner2">Him</option>
-                       </select>
+                       <div className="flex items-center gap-4">
+                          <select 
+                            value={coupon.for} 
+                            onChange={(e) => handleCouponChange(coupon.id, 'for', e.target.value)}
+                            className="text-[10px] font-black border rounded-lg p-1 bg-gray-50 uppercase"
+                          >
+                             <option value="partner1">Her</option>
+                             <option value="partner2">Him</option>
+                          </select>
+                          <label className="flex items-center gap-2 cursor-pointer select-none group/toggle">
+                             <div 
+                                onClick={() => handleCouponChange(coupon.id, 'isRedeemed', !coupon.isRedeemed)}
+                                className={`w-8 h-4 rounded-full transition-all relative ${coupon.isRedeemed ? 'bg-red-500' : 'bg-gray-200'}`}
+                             >
+                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${coupon.isRedeemed ? 'left-4.5' : 'left-0.5'}`} />
+                             </div>
+                             <span className={`text-[9px] font-black uppercase tracking-widest ${coupon.isRedeemed ? 'text-red-500' : 'text-gray-400'}`}>
+                                {coupon.isRedeemed ? 'Redeemed' : 'Unused'}
+                             </span>
+                          </label>
+                       </div>
                        <button 
-                         onClick={() => updateLocal(prev => ({ ...prev, coupons: prev.coupons.filter(c => c.id !== coupon.id) }))}
-                         className="text-[10px] font-black text-red-400 uppercase tracking-widest"
-                       >Remove</button>
+                         onClick={() => {
+                            if (window.confirm("Delete this coupon?")) {
+                               updateLocal(prev => ({ ...prev, coupons: prev.coupons.filter(c => c.id !== coupon.id) }));
+                            }
+                         }}
+                         className="w-8 h-8 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                         title="Delete Coupon"
+                       >
+                          <i className="fas fa-trash-alt text-xs"></i>
+                       </button>
                     </div>
                  </div>
               ))}

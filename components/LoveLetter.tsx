@@ -18,9 +18,10 @@ interface LoveLetterProps {
   messages: LoveLetterMessage[];
   onSendMessage: (msg: LoveLetterMessage) => void;
   partners: Partners;
+  isInline?: boolean;
 }
 
-const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSendMessage, partners }) => {
+const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSendMessage, partners, isInline = false }) => {
   const [view, setView] = useState<'list' | 'compose' | 'read'>('list');
   const [selectedMessage, setSelectedMessage] = useState<LoveLetterMessage | null>(null);
   
@@ -118,36 +119,39 @@ const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSe
   const getPartnerName = (id: string) => id === 'partner1' ? partners.partner1.name : partners.partner2.name;
   const getPartnerAvatar = (id: string) => id === 'partner1' ? partners.partner1.avatar : partners.partner2.avatar;
 
-  if (!isOpen) return null;
+  if (!isOpen && !isInline) return null;
 
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-        >
-          {/* Main Card */}
-          <motion.div
-            initial={{ scale: 0.9, y: 20 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.9, y: 20 }}
-            className="bg-white w-full max-w-md h-[650px] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col relative"
-          >
+  const MainContent = (
+    <motion.div
+      initial={isInline ? { opacity: 0, y: 20 } : { x: "100%", y: "100%" }}
+      animate={{ x: 0, y: 0, opacity: 1 }}
+      exit={isInline ? { opacity: 0, y: 20 } : { x: "100%", y: "100%" }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+      className={`${isInline ? 'w-full h-full max-w-2xl mx-auto rounded-3xl' : 'bg-white w-full md:w-[450px] h-[85vh] md:h-full rounded-t-3xl md:rounded-l-3xl md:rounded-tr-none shadow-2xl'} overflow-hidden flex flex-col relative bg-white`}
+      onClick={e => e.stopPropagation()}
+    >
             {/* Header */}
             <div className="bg-pink-500 p-6 flex justify-between items-center text-white z-20 shadow-md">
               <div className="flex items-center gap-3">
-                 <button 
-                   onClick={() => {
-                     if (view !== 'list') setView('list');
-                     else onClose();
-                   }} 
-                   className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
-                 >
-                   <i className={`fas ${view === 'list' ? 'fa-times' : 'fa-arrow-left'}`}></i>
-                 </button>
+                 {!isInline && (
+                   <button 
+                     onClick={() => {
+                       if (view !== 'list') setView('list');
+                       else onClose();
+                     }} 
+                     className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+                   >
+                     <i className={`fas ${view === 'list' ? 'fa-times' : 'fa-arrow-left'}`}></i>
+                   </button>
+                 )}
+                 {isInline && view !== 'list' && (
+                   <button 
+                     onClick={() => setView('list')} 
+                     className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+                   >
+                     <i className="fas fa-arrow-left"></i>
+                   </button>
+                 )}
                  <h2 className="font-pacifico text-2xl">
                    {view === 'list' ? 'Love Mail' : view === 'compose' ? 'Write Love' : 'Reading...'}
                  </h2>
@@ -323,12 +327,27 @@ const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSe
 
             {/* --- READ VIEW --- */}
             {view === 'read' && selectedMessage && (
-               <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#fdf2f8]">
+               <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-md">
                  <ReadAnimation message={selectedMessage} onClose={() => setView('list')} />
                </div>
             )}
 
-          </motion.div>
+    </motion.div>
+  );
+
+  if (isInline) return MainContent;
+
+  return (
+    <AnimatePresence>
+      {(isOpen || isInline) && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-end items-end md:items-stretch"
+          onClick={onClose}
+        >
+          {MainContent}
         </motion.div>
       )}
     </AnimatePresence>

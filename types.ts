@@ -55,6 +55,7 @@ export interface AppConfig {
   anniversaryDate: string;
   treeStyle: string;
   viewMode?: "2d" | "3d";
+  graphicsQuality?: 'low' | 'medium' | 'high';
   galleryStyle: string;
   gallerySource: "manual" | "instagram";
   instagramUsername: string;
@@ -63,6 +64,11 @@ export interface AppConfig {
   flowerType: string;
   mixedFlowers: string[];
   skyMode: string;
+  showQRCode?: boolean;
+  petType?: string;
+  pets?: Array<{ id: string; type: string; name?: string }>;
+  showCouponsOnTimeline?: boolean;
+  timelineCardScale?: number;
   timelineDefaultRows: number;
   proposal: {
     questions: string[];
@@ -84,5 +90,7 @@ export interface AppConfig {
     expiry?: string;
     for?: string;
     points?: number;
+    isRedeemed?: boolean;
+    redeemedAt?: Date | string;
   }[];
 }

@@ -4,10 +4,9 @@ import * as React from 'react';
 import { useRef, useState, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Float, Stars, Sparkles, ContactShadows } from '@react-three/drei';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as THREE from 'three';
 import { Emotion } from '../types';
-
-// ─── TYPES ───────────────────────────────────────────────────────────
 
 interface LoveTree3DProps {
   anniversaryDate: string;
@@ -23,6 +22,10 @@ interface LoveTree3DProps {
   points: number;
   onAddLeaf: () => void;
   skyMode?: string;
+  showQRCode?: boolean;
+  petType?: string;
+  pets?: Array<{ id: string; type: string; name?: string }>;
+  graphicsQuality?: 'low' | 'medium' | 'high';
 }
 
 const THEMES: Record<string, any> = {
@@ -73,11 +76,11 @@ const THEMES: Record<string, any> = {
 // ─── COMPONENTS ──────────────────────────────────────────────────────
 
 // Individual Leaf with fluttering animation
-const Leaf = ({ position, scale, color, offset, windFactor = 1 }: { position: [number, number, number], scale: number, color: string, offset: number, windFactor?: number }) => {
+const Leaf = ({ position, scale, color, offset, windFactor = 1, quality = 'medium' }: { position: [number, number, number], scale: number, color: string, offset: number, windFactor?: number, quality?: string }) => {
   const meshRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
-    if (meshRef.current) {
+    if (meshRef.current && quality !== 'low') { // Disable leaf animation on low
       const t = state.clock.getElapsedTime();
       // Fluttering effect influenced by windFactor
       meshRef.current.rotation.x = Math.sin(t * windFactor + offset) * (0.15 * windFactor);
@@ -87,9 +90,11 @@ const Leaf = ({ position, scale, color, offset, windFactor = 1 }: { position: [n
     }
   });
 
+  const segs = quality === 'low' ? 4 : quality === 'medium' ? 6 : 8;
+
   return (
-    <mesh ref={meshRef} position={position} scale={[scale, scale * 0.4, scale * 0.7]} castShadow receiveShadow>
-      <sphereGeometry args={[0.6, 8, 8]} />
+    <mesh ref={meshRef} position={position} scale={[scale, scale * 0.4, scale * 0.7]} castShadow={quality !== 'low'} receiveShadow={quality !== 'low'}>
+      <sphereGeometry args={[0.6, segs, segs]} />
       <meshStandardMaterial color={color} />
     </mesh>
   );
@@ -143,19 +148,23 @@ const FallingLeaf = ({ theme }: { theme: any }) => {
 };
 
 // Structural Tree Branch with attached leaves
-const Branch = ({ position, rotation, scale, color, theme, leafCount, windFactor }: { 
+const Branch = ({ position, rotation, scale, color, theme, leafCount, windFactor, quality = 'medium' }: { 
     position: [number, number, number], 
     rotation: [number, number, number], 
     scale: [number, number, number], 
     color: string,
     theme: any,
     leafCount: number,
-    windFactor: number
+    windFactor: number,
+    quality?: string
 }) => {
     // Generate leaves relative to the branch's local coordinate system (the tip)
     const branchLeaves = useMemo(() => {
         const pos = [];
-        for(let i=0; i<leafCount; i++) {
+        // Reduce leaf count for low quality
+        const effectiveCount = quality === 'low' ? Math.floor(leafCount * 0.6) : leafCount;
+        
+        for(let i=0; i<effectiveCount; i++) {
             // Sine-hash for stability within the branch
             const sin1 = Math.sin(i * 123.456 + position[0]) * 10000;
             const r1 = sin1 - Math.floor(sin1);
@@ -182,7 +191,7 @@ const Branch = ({ position, rotation, scale, color, theme, leafCount, windFactor
             });
         }
         return pos;
-    }, [leafCount, theme, position]);
+    }, [leafCount, theme, position, quality]);
 
     return (
         <group position={position} rotation={rotation}>
@@ -192,7 +201,7 @@ const Branch = ({ position, rotation, scale, color, theme, leafCount, windFactor
                 <meshStandardMaterial color={color} />
             </mesh>
             {/* Twigs */}
-            <mesh position={[0, 0.4, 0.05]} rotation={[0.4, 0, 0.2]} scale={[0.5, 0.6, 0.5]} castShadow>
+            <mesh position={[0, 0.4, 0.05]} rotation={[0.4, 0, 0.2]} scale={[0.5, 0.6, 0.5]} castShadow={quality !== 'low'}>
                 <cylinderGeometry args={[0.02, 0.04, 0.5, 6]} />
                 <meshStandardMaterial color={color} />
             </mesh>
@@ -206,20 +215,68 @@ const Branch = ({ position, rotation, scale, color, theme, leafCount, windFactor
                     color={leaf.color} 
                     offset={leaf.offset}
                     windFactor={windFactor}
+                    quality={quality}
                 />
             ))}
         </group>
     );
 };
 
-const Tree = ({ theme, scale = 1, leafCount, windFactor = 1 }: { theme: any; scale?: number; leafCount: number; windFactor?: number }) => {
+// Particle explosion when adding a leaf
+const LeafExplosion = ({ count = 20, color = "#4ade80" }) => {
+  const group = useRef<THREE.Group>(null);
+  
+  useFrame((state, delta) => {
+    if (group.current) {
+        group.current.children.forEach((child: any) => {
+            child.position.add(child.userData.velocity);
+            child.userData.velocity.y -= delta * 0.5; // Gravity
+            child.scale.multiplyScalar(0.95); // Shrink
+            child.rotation.x += child.userData.spin.x;
+            child.rotation.y += child.userData.spin.y;
+            child.rotation.z += child.userData.spin.z;
+        });
+    }
+  });
+
+  const particles = useMemo(() => {
+      return Array.from({ length: count }).map(() => ({
+          position: [0, 2, 0] as [number, number, number],
+          velocity: [
+              (Math.random() - 0.5) * 0.2,
+              Math.random() * 0.2 + 0.1,
+              (Math.random() - 0.5) * 0.2
+          ] as [number, number, number],
+          spin: {
+            x: (Math.random() - 0.5) * 0.2,
+            y: (Math.random() - 0.5) * 0.2,
+            z: (Math.random() - 0.5) * 0.2
+          },
+          scale: Math.random() * 0.3 + 0.1,
+          color: color
+      }));
+  }, [count, color]);
+
+  return (
+    <group ref={group}>
+        {particles.map((p, i) => (
+            <mesh key={i} position={p.position} userData={{ velocity: new THREE.Vector3(...p.velocity), spin: p.spin }}>
+                <sphereGeometry args={[p.scale, 8, 8]} />
+                <meshStandardMaterial color={p.color} emissive={p.color} emissiveIntensity={0.5} transparent opacity={0.8} />
+            </mesh>
+        ))}
+    </group>
+  );
+};
+
+const Tree = ({ theme, scale = 1, leafCount, windFactor = 1, branchCount = 6, quality = 'medium' }: { theme: any; scale?: number; leafCount: number; windFactor?: number; branchCount?: number; quality?: string }) => {
   const group = useRef<THREE.Group>(null);
   const [pulse, setPulse] = useState(1);
   const prevLeafCount = useRef(leafCount);
 
   // Generate Stable Branch Structure
   const branches = useMemo(() => {
-    return [
+    const base = [
       { pos: [0.3, 1.8, 0] as [number, number, number], rot: [0, 0, -Math.PI / 3.5] as [number, number, number], scl: [1, 1.5, 1] as [number, number, number] },
       { pos: [-0.3, 2.0, 0] as [number, number, number], rot: [0, 0, Math.PI / 3.5] as [number, number, number], scl: [0.8, 1.3, 0.8] as [number, number, number] },
       { pos: [0, 2.2, 0.3] as [number, number, number], rot: [-Math.PI / 3.5, 0, 0] as [number, number, number], scl: [0.7, 1.2, 0.7] as [number, number, number] },
@@ -227,7 +284,22 @@ const Tree = ({ theme, scale = 1, leafCount, windFactor = 1 }: { theme: any; sca
       { pos: [0.2, 2.4, 0.2] as [number, number, number], rot: [-Math.PI / 6, 0, -Math.PI / 6] as [number, number, number], scl: [0.5, 1.0, 0.5] as [number, number, number] },
       { pos: [-0.2, 2.5, -0.2] as [number, number, number], rot: [Math.PI / 6, 0, Math.PI / 6] as [number, number, number], scl: [0.5, 1.0, 0.5] as [number, number, number] },
     ];
-  }, []);
+
+    // Procedurally generate extra branches if needed
+    if (branchCount > 6) {
+        for (let i = 6; i < branchCount; i++) {
+            const h = 2.0 + Math.random() * 1.5; // Height 2.0 - 3.5
+            const angle = Math.random() * Math.PI * 2;
+            const r = 0.2 + Math.random() * 0.3;
+            base.push({
+                pos: [Math.cos(angle) * r, h, Math.sin(angle) * r] as [number, number, number],
+                rot: [(Math.random() - 0.5) * 1, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 1] as [number, number, number],
+                scl: [0.4 + Math.random() * 0.4, 0.8 + Math.random() * 0.6, 0.4 + Math.random() * 0.4] as [number, number, number]
+            });
+        }
+    }
+    return base.slice(0, branchCount);
+  }, [branchCount]);
 
   // Trigger pulse animation when leafCount increases
   React.useEffect(() => {
@@ -238,8 +310,9 @@ const Tree = ({ theme, scale = 1, leafCount, windFactor = 1 }: { theme: any; sca
   }, [leafCount]);
   
   // Calculate individual branch leaf counts
-  const leavesPerBranch = Math.floor(Math.min(leafCount, 400) / branches.length);
-  const extraLeaves = Math.min(leafCount, 400) % branches.length;
+  // Distribute leaves across branches
+  const leavesPerBranch = Math.floor(Math.min(leafCount, 2000) / branches.length);
+  const extraLeaves = Math.min(leafCount, 2000) % branches.length;
 
   // Gentle swaying animation + Growth pulse lerp
   useFrame(({ clock }) => {
@@ -248,12 +321,18 @@ const Tree = ({ theme, scale = 1, leafCount, windFactor = 1 }: { theme: any; sca
         group.current.rotation.z = Math.sin(clock.elapsedTime * 0.4 * windFactor) * (0.015 * windFactor);
         group.current.rotation.x = Math.cos(clock.elapsedTime * 0.3 * windFactor) * (0.015 * windFactor);
         
-        // Pulse lerp back to 1
-        if (pulse > 1) {
-            setPulse(THREE.MathUtils.lerp(pulse, 1, 0.1));
-            group.current.scale.setScalar(scale * pulse);
+        // Pulse lerp back to 1 - Elastic bounce
+        if (pulse > 1 || pulse < 1) { // generic check, though we sett to 1.5
+             // Simple spring-like effect 
+             const delta = (1 - pulse) * 0.1;
+             setPulse(p => {
+                 const next = p + delta;
+                 return Math.abs(1 - next) < 0.001 ? 1 : next;
+             });
+             group.current.scale.setScalar(scale * pulse);
         } else {
-            group.current.scale.setScalar(scale);
+             // ensure we stick to target scale
+             if (group.current.scale.x !== scale) group.current.scale.setScalar(scale);
         }
     }
   });
@@ -266,7 +345,9 @@ const Tree = ({ theme, scale = 1, leafCount, windFactor = 1 }: { theme: any; sca
         {[
           { y: 0.4, s: [0.35, 0.8, 0.35], r: [0, 0, 0.05] },
           { y: 1.1, s: [0.28, 0.8, 0.28], r: [0.05, 0, -0.05] },
-          { y: 1.7, s: [0.22, 0.8, 0.22], r: [-0.05, 0, 0.02] }
+          { y: 1.7, s: [0.22, 0.8, 0.22], r: [-0.05, 0, 0.02] },
+          // Extra trunk height for mature trees
+          ...(branchCount > 8 ? [{ y: 2.3, s: [0.18, 0.8, 0.18], r: [0, 0.1, -0.02] }] : [])
         ].map((seg, i) => (
           <mesh key={i} position={[0, seg.y, 0]} rotation={seg.r as [number, number, number]} castShadow receiveShadow>
             <cylinderGeometry args={[seg.s[0]*0.8, seg.s[0], seg.s[1], 8]} />
@@ -315,6 +396,7 @@ const Tree = ({ theme, scale = 1, leafCount, windFactor = 1 }: { theme: any; sca
                 theme={theme}
                 leafCount={leavesPerBranch + (i < extraLeaves ? 1 : 0)}
                 windFactor={windFactor}
+                quality={quality}
               />
           ))}
       </group>
@@ -322,21 +404,28 @@ const Tree = ({ theme, scale = 1, leafCount, windFactor = 1 }: { theme: any; sca
   );
 };
 
-const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
-  const ref = useRef<THREE.Group>(null);
+const Pet3D = React.forwardRef<THREE.Group, { emotion: Emotion; theme: any; petType?: string; startPos?: [number, number, number]; otherPets?: Array<{ ref: React.RefObject<THREE.Group | null>, type: string }> }>(({ emotion, theme, petType = 'cat', startPos = [2, 0, 2], otherPets = [] }, externalRef) => {
+  const innerRef = useRef<THREE.Group>(null);
+  // Use the external ref if provided, otherwise the internal one
+  const ref = (externalRef as React.RefObject<THREE.Group>) || innerRef;
   const coreRef = useRef<THREE.Group>(null);
   const tailRef = useRef<THREE.Group>(null);
   const headRef = useRef<THREE.Group>(null);
   const legRefs = [useRef<THREE.Group>(null), useRef<THREE.Group>(null), useRef<THREE.Group>(null), useRef<THREE.Group>(null)];
   const [active, setActive] = useState(false);
   
-  const colors = {
-    primary: "#e69138", // Shiba Orange
-    secondary: "#ffffff", // White markings
-    nose: "#222"
-  };
+  const colors = useMemo(() => {
+    switch(petType) {
+      case 'cat': return { primary: "#555", secondary: "#fff", nose: "#ff99ad" }; // Grey/White cat
+      case 'dog': return { primary: "#e69138", secondary: "#fff", nose: "#222" }; // Shiba dog
+      case 'rabbit': return { primary: "#fff", secondary: "#f9a8d4", nose: "#f472b6" }; // White rabbit
+      case 'panda': return { primary: "#ffffff", secondary: "#000000", nose: "#000" }; // Black/White panda
+      case 'fox': return { primary: "#f97316", secondary: "#fff", nose: "#222" }; // Fox orange
+      default: return { primary: "#e69138", secondary: "#fff", nose: "#222" };
+    }
+  }, [petType]);
 
-  const [activity, setActivity] = useState<'walk' | 'sit' | 'lie' | 'idle'>('idle');
+  const [activity, setActivity] = useState<'walk' | 'sit' | 'lie' | 'idle' | 'play'>('idle');
   const activityTimer = useRef(0);
   const targetPos = useRef(new THREE.Vector3(2, 0, 2));
 
@@ -351,9 +440,8 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
                 setActivity('lie');
                 activityTimer.current = 10;
             } else {
-                // Cycle: Walk -> Idle -> Sit -> Lie -> Sit -> Idle -> Walk
-                const states: typeof activity[] = ['walk', 'idle', 'sit', 'lie'];
-                const weights = [0.4, 0.2, 0.2, 0.2];
+                const states: typeof activity[] = ['walk', 'idle', 'sit', 'lie', 'play'];
+                const weights = [0.4, 0.2, 0.1, 0.1, 0.2];
                 const rand = Math.random();
                 let acc = 0;
                 for(let i=0; i<states.length; i++) {
@@ -366,10 +454,20 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
                 activityTimer.current = 4 + Math.random() * 6;
             }
             
-            if (activity === 'walk') {
+            if (activity === 'walk' || activity === 'play') {
                 const angle = Math.random() * Math.PI * 2;
-                const dist = 1.5 + Math.random() * 3.5;
-                targetPos.current.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+                const dist = activity === 'play' ? 1.0 + Math.random() * 2.0 : 1.5 + Math.random() * 4.5;
+                
+                // If playing, try to pick a point near a companion
+                let finalTarget = new THREE.Vector3(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+                if (activity === 'play' && otherPets.length > 0) {
+                    const companion = otherPets[Math.floor(Math.random() * otherPets.length)];
+                    if (companion.ref.current) {
+                        const companionPos = companion.ref.current.position;
+                        finalTarget.set(companionPos.x + (Math.random() - 0.5) * 2, 0, companionPos.z + (Math.random() - 0.5) * 2);
+                    }
+                }
+                targetPos.current.copy(finalTarget);
             }
         }
 
@@ -378,19 +476,17 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
         // 2. Natural Animation Procedural Lerping
         let targetY = 0;
         let targetBodyRot = 0;
-        let legRotX = [0, 0, 0, 0]; // FR, FL, BR, BL
+        let legRotX = [0, 0, 0, 0]; 
         let legRotZ = [0, 0, 0, 0];
 
         switch(activity) {
             case 'walk':
-                // Move towards target
                 ref.current.position.lerp(targetPos.current, 0.02);
                 const dir = targetPos.current.clone().sub(ref.current.position).normalize();
                 if (dir.lengthSq() > 0.001) {
                     const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
                     ref.current.quaternion.slerp(targetQuat, 0.1);
                 }
-                // Trot animation
                 targetY = Math.abs(Math.sin(t * 10)) * 0.1;
                 legRotX = [
                     Math.sin(t * 12) * 0.6,
@@ -403,25 +499,42 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
 
             case 'sit':
                 targetY = -0.15;
-                targetBodyRot = -Math.PI / 10; // Tilt body back
-                legRotX = [0, 0, -1.2, -1.2]; // Back legs fold
+                targetBodyRot = -Math.PI / 10;
+                legRotX = [0, 0, -1.2, -1.2];
                 if (head) {
                     head.rotation.x = -0.1 + Math.sin(t * 0.5) * 0.2;
-                    head.rotation.y = Math.sin(t * 0.3) * 0.4; // Look around curiously
+                    head.rotation.y = Math.sin(t * 0.3) * 0.4;
                 }
                 break;
 
             case 'lie':
                 targetY = -0.3;
                 targetBodyRot = 0;
-                legRotX = [-Math.PI / 2.2, -Math.PI / 2.2, -Math.PI / 2.2, -Math.PI / 2.2]; // All legs flat
+                legRotX = [-Math.PI / 2.2, -Math.PI / 2.2, -Math.PI / 2.2, -Math.PI / 2.2];
                 if (head) {
-                    head.rotation.x = 0.2; // Head down
+                    head.rotation.x = 0.2;
                     head.rotation.y = Math.sin(t * 0.2) * 0.1;
                 }
                 break;
 
-            default: // idle
+            case 'play':
+                ref.current.position.lerp(targetPos.current, 0.04); // Move faster when playing
+                const pDir = targetPos.current.clone().sub(ref.current.position).normalize();
+                if (pDir.lengthSq() > 0.001) {
+                    const tQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), pDir);
+                    ref.current.quaternion.slerp(tQuat, 0.2);
+                }
+                targetY = 0.2 + Math.abs(Math.sin(t * 15)) * 0.4; // Jump higher
+                legRotX = [
+                    Math.sin(t * 20) * 0.8,
+                    Math.sin(t * 20 + Math.PI) * 0.8,
+                    Math.sin(t * 20 + Math.PI) * 0.8,
+                    Math.sin(t * 20) * 0.8
+                ];
+                if (head) head.rotation.z = Math.sin(t * 10) * 0.2; // Wiggle head
+                break;
+
+            default: 
                 targetY = Math.sin(t * 2) * 0.02;
                 if (head) {
                     head.rotation.x = Math.sin(t * 1) * 0.1;
@@ -430,36 +543,24 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
                 break;
         }
 
-        // Apply Lerps for smoothness
         coreRef.current.position.y = THREE.MathUtils.lerp(coreRef.current.position.y, targetY, 0.1);
         coreRef.current.rotation.x = THREE.MathUtils.lerp(coreRef.current.rotation.x, targetBodyRot, 0.1);
         
-        // --- หันหน้า (Head Look Logic) ---
         if (headRef.current) {
             let headX = 0;
             let headY = 0;
-
             if (activity === 'walk') {
-               headX = Math.sin(t * 10) * 0.1; // Bobbing while walking
+               headX = Math.sin(t * 10) * 0.1;
             } else {
-               // Look towards camera (User)
                const cameraPos = state.camera.position.clone();
-               // Convert camera position to the coordinate system of the head's parent
                const localLook = headRef.current.parent!.worldToLocal(cameraPos);
-               
-               // Calculate angles to look at user
                headY = Math.atan2(localLook.x, localLook.z);
                headX = -Math.atan2(localLook.y, Math.sqrt(localLook.x * localLook.x + localLook.z * localLook.z));
-               
-               // Clamp for natural animal neck limits
                headY = THREE.MathUtils.clamp(headY, -Math.PI / 2.5, Math.PI / 2.5);
                headX = THREE.MathUtils.clamp(headX, -Math.PI / 4, Math.PI / 6);
-               
-               // Add gentle idle sway
                headY += Math.sin(t * 0.5) * 0.1;
                headX += Math.cos(t * 0.3) * 0.05;
             }
-
             headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, headX, 0.1);
             headRef.current.rotation.y = THREE.MathUtils.lerp(headRef.current.rotation.y, headY, 0.1);
         }
@@ -471,7 +572,6 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
             }
         });
 
-        // 3. Global Procedural Bits
         if (tailRef.current) {
             const wagSpeed = (activity === 'walk' || emotion === 'excited') ? 15 : 2;
             tailRef.current.rotation.z = (Math.PI / 8) + Math.sin(t * wagSpeed) * 0.2;
@@ -483,20 +583,17 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
   });
 
   return (
-    <group 
-        ref={ref} 
-        position={[2, 0, 2]}
-    >
+    <group ref={ref} position={startPos}>
         <group ref={coreRef}>
             {/* Body */}
             <mesh position={[0, 0.45, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
                 <capsuleGeometry args={[0.25, 0.45, 4, 8]} />
-                <meshStandardMaterial color={colors.primary} />
+                <meshStandardMaterial color={petType === 'panda' ? colors.primary : colors.primary} />
             </mesh>
-            {/* White Underbelly */}
+            {/* Underbelly Patch */}
             <mesh position={[0, 0.38, 0.05]} rotation={[Math.PI / 2, 0, 0]}>
                 <capsuleGeometry args={[0.2, 0.4, 4, 8]} />
-                <meshStandardMaterial color={colors.secondary} transparent opacity={0.6} />
+                <meshStandardMaterial color={petType === 'panda' ? colors.secondary : colors.secondary} transparent opacity={petType === 'panda' ? 1 : 0.6} />
             </mesh>
 
             {/* Head */}
@@ -505,21 +602,21 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
                     <sphereGeometry args={[0.28, 16, 16]} />
                     <meshStandardMaterial color={colors.primary} />
                 </mesh>
-                {/* Face White Patch */}
+                
+                {/* Face Patch */}
                 <mesh position={[0, -0.05, 0.1]} scale={[1, 0.8, 1]}>
                     <sphereGeometry args={[0.22, 12, 12]} />
                     <meshStandardMaterial color={colors.secondary} />
                 </mesh>
                 
-                {/* Snout/Muzzle */}
+                {/* Snout */}
                 <group position={[0, -0.05, 0.25]}>
                     <mesh castShadow>
-                        <boxGeometry args={[0.15, 0.12, 0.15]} />
+                        <boxGeometry args={[petType === 'rabbit' ? 0.1 : 0.15, 0.12, 0.15]} />
                         <meshStandardMaterial color={colors.secondary} />
                     </mesh>
-                    {/* Nose */}
                     <mesh position={[0, 0.04, 0.08]}>
-                        <sphereGeometry args={[0.03, 8, 8]} />
+                        <sphereGeometry args={[petType === 'rabbit' ? 0.02 : 0.03, 8, 8]} />
                         <meshStandardMaterial color={colors.nose} />
                     </mesh>
                 </group>
@@ -535,22 +632,60 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
                 </mesh>
 
                 {/* Ears */}
-                <mesh position={[0.18, 0.22, 0.1]} rotation={[0.2, 0, -0.3]}>
-                    <coneGeometry args={[0.08, 0.2, 4]} />
-                    <meshStandardMaterial color={colors.primary} />
-                </mesh>
-                <mesh position={[-0.18, 0.22, 0.1]} rotation={[0.2, 0, 0.3]}>
-                    <coneGeometry args={[0.08, 0.2, 4]} />
-                    <meshStandardMaterial color={colors.primary} />
-                </mesh>
+                {petType === 'rabbit' ? (
+                  <>
+                    <mesh position={[0.1, 0.4, 0]} rotation={[0.1, 0, 0]}>
+                        <capsuleGeometry args={[0.05, 0.4, 4, 8]} />
+                        <meshStandardMaterial color={colors.primary} />
+                    </mesh>
+                    <mesh position={[-0.1, 0.4, 0]} rotation={[0.1, 0, 0]}>
+                        <capsuleGeometry args={[0.05, 0.4, 4, 8]} />
+                        <meshStandardMaterial color={colors.primary} />
+                    </mesh>
+                  </>
+                ) : petType === 'panda' ? (
+                  <>
+                    <mesh position={[0.2, 0.25, 0.1]} rotation={[0, 0, 0]}>
+                        <sphereGeometry args={[0.1, 8, 8]} />
+                        <meshStandardMaterial color={colors.secondary} />
+                    </mesh>
+                    <mesh position={[-0.2, 0.25, 0.1]} rotation={[0, 0, 0]}>
+                        <sphereGeometry args={[0.1, 8, 8]} />
+                        <meshStandardMaterial color={colors.secondary} />
+                    </mesh>
+                  </>
+                ) : (
+                  <>
+                    <mesh position={[0.18, 0.22, 0.1]} rotation={[0.2, 0, -0.3]}>
+                        <coneGeometry args={[0.08, 0.2, 4]} />
+                        <meshStandardMaterial color={colors.primary} />
+                    </mesh>
+                    <mesh position={[-0.18, 0.22, 0.1]} rotation={[0.2, 0, 0.3]}>
+                        <coneGeometry args={[0.08, 0.2, 4]} />
+                        <meshStandardMaterial color={colors.primary} />
+                    </mesh>
+                  </>
+                )}
             </group>
 
-            {/* Curly Tail */}
+            {/* Tail */}
             <group ref={tailRef} position={[0, 0.6, -0.45]} rotation={[-0.5, 0, 0]}>
-                <mesh castShadow>
-                    <torusGeometry args={[0.12, 0.05, 8, 16, Math.PI * 1.5]} />
-                    <meshStandardMaterial color={colors.primary} />
-                </mesh>
+                {petType === 'rabbit' ? (
+                   <mesh castShadow>
+                      <sphereGeometry args={[0.1, 8, 8]} />
+                      <meshStandardMaterial color={colors.primary} />
+                   </mesh>
+                ) : petType === 'fox' ? (
+                   <mesh castShadow rotation={[Math.PI/2, 0, 0]} position={[0, -0.2, -0.2]}>
+                      <capsuleGeometry args={[0.12, 0.4, 4, 8]} />
+                      <meshStandardMaterial color={colors.primary} />
+                   </mesh>
+                ) : (
+                    <mesh castShadow>
+                        <torusGeometry args={[0.12, 0.05, 8, 16, Math.PI * 1.5]} />
+                        <meshStandardMaterial color={colors.primary} />
+                    </mesh>
+                )}
                 <mesh position={[0, 0.1, 0]}>
                     <sphereGeometry args={[0.07, 8, 8]} />
                     <meshStandardMaterial color={colors.secondary} />
@@ -559,17 +694,16 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
 
             {/* Legs */}
             {[
-                { p: [0.15, 0.25, 0.2], r: legRefs[0] }, // Front Right
-                { p: [-0.15, 0.25, 0.2], r: legRefs[1] }, // Front Left
-                { p: [0.15, 0.25, -0.2], r: legRefs[2] }, // Back Right
-                { p: [-0.15, 0.25, -0.2], r: legRefs[3] }  // Back Left
+                { p: [0.15, 0.25, 0.2], r: legRefs[0] }, 
+                { p: [-0.15, 0.25, 0.2], r: legRefs[1] }, 
+                { p: [0.15, 0.25, -0.2], r: legRefs[2] }, 
+                { p: [-0.15, 0.25, -0.2], r: legRefs[3] }  
             ].map((leg, i) => (
-                <group key={i} position={leg.p as [number, number, number]} ref={leg.r}>
+                <group key={i} position={leg.p as [number, number, number]} ref={leg.r} scale={petType === 'panda' ? [1.2, 1, 1.2] : [1, 1, 1]}>
                     <mesh position={[0, -0.15, 0]} castShadow>
                         <boxGeometry args={[0.08, 0.3, 0.08]} />
-                        <meshStandardMaterial color={i < 2 ? colors.primary : colors.primary} />
+                        <meshStandardMaterial color={(petType === 'panda') ? colors.secondary : colors.primary} />
                     </mesh>
-                    {/* White Paws */}
                     <mesh position={[0, -0.3, 0.02]}>
                         <boxGeometry args={[0.09, 0.05, 0.12]} />
                         <meshStandardMaterial color={colors.secondary} />
@@ -593,9 +727,9 @@ const Pet3D = ({ emotion, theme }: { emotion: Emotion; theme: any }) => {
         )}
     </group>
   );
-};
+});
 
-const Flower = ({ type, position, scale = 1, windFactor = 1 }: { type: string, position: [number, number, number], scale?: number, windFactor?: number }) => {
+const Flower = ({ type, position, scale = 1, windFactor = 1, quality = 'medium' }: { type: string, position: [number, number, number], scale?: number, windFactor?: number, quality?: string }) => {
     const groupRef = useRef<THREE.Group>(null);
     const stemColor = "#15803d";
     const seed = useMemo(() => Math.random() * Math.PI * 2, []);
@@ -603,9 +737,11 @@ const Flower = ({ type, position, scale = 1, windFactor = 1 }: { type: string, p
     useFrame((state) => {
         if (groupRef.current) {
             const t = state.clock.getElapsedTime();
-            // Organic swaying in the wind
-            groupRef.current.rotation.x = Math.sin(t * 1.5 * windFactor + seed) * (0.1 * windFactor);
-            groupRef.current.rotation.z = Math.cos(t * 1.2 * windFactor + seed) * (0.05 * windFactor);
+            // Organic swaying in the wind - disable on low
+            if (quality !== 'low') {
+                groupRef.current.rotation.x = Math.sin(t * 1.5 * windFactor + seed) * (0.1 * windFactor);
+                groupRef.current.rotation.z = Math.cos(t * 1.2 * windFactor + seed) * (0.05 * windFactor);
+            }
         }
     });
     
@@ -967,12 +1103,53 @@ const Butterfly = ({ flowers }: { flowers: any[] }) => {
                 <cylinderGeometry args={[0.002, 0.002, 0.1]} />
                 <meshStandardMaterial color="#111" />
             </mesh>
-
+            
             {/* Trail during zip */}
             {activity === 'zip' && <Sparkles count={5} scale={0.5} size={1} speed={2} color={color} />}
         </group>
     );
-}
+};
+
+const FloatingText = ({ text, position, color = "#22c55e", onComplete }: { text: string, position: [number, number, number], color?: string, onComplete?: () => void }) => {
+    const textRef = useRef<THREE.Group>(null);
+    const [opacity, setOpacity] = useState(1);
+    
+    useFrame((state, delta) => {
+        if (textRef.current) {
+            textRef.current.position.y += delta * 1.5; // Float up
+            setOpacity(prev => Math.max(0, prev - delta * 0.8)); // Fade out
+            if (opacity <= 0 && onComplete) {
+                onComplete();
+            }
+        }
+    });
+
+    if (opacity <= 0) return null;
+
+    return (
+        <group ref={textRef} position={position}>
+            <Float speed={5} rotationIntensity={0.2} floatIntensity={0.2}>
+               <Text
+                 color={color}
+                 fontSize={0.8}
+                 maxWidth={200}
+                 lineHeight={1}
+                 letterSpacing={0.02}
+                 textAlign="center"
+                 font="https://fonts.gstatic.com/s/raleway/v14/1Ptrg8zYS_SKggPNwK4vaqI.woff"
+                 anchorX="center"
+                 anchorY="middle"
+                 outlineWidth={0.05}
+                 outlineColor="#ffffff"
+                 fillOpacity={opacity}
+                 outlineOpacity={opacity}
+               >
+                 {text}
+               </Text>
+            </Float>
+        </group>
+    );
+};
 
 const GardenProp = ({ position, type }: { position: [number, number, number], type: 'rock' | 'fence' }) => {
     return (
@@ -1139,11 +1316,70 @@ const StonePath = () => {
 
 const LoveTree3D: React.FC<LoveTree3DProps> = ({ 
     anniversaryDate, treeStyle = 'oak', petEmotion, petMessage, level,
-    leaves, points, onAddLeaf, daysPerFlower = 7, flowerType = 'sunflower',
-    mixedFlowers = ['sunflower', 'tulip', 'rose', 'cherry', 'lavender', 'heart'],
-    skyMode = 'follow_timezone'
-}) => {
-  const theme = THEMES[treeStyle] || THEMES['oak'];
+     leaves, points, onAddLeaf, daysPerFlower = 7, flowerType = 'sunflower',
+     mixedFlowers = ['sunflower', 'tulip', 'rose', 'cherry', 'lavender', 'heart'],
+     skyMode = 'follow_timezone', showQRCode = false, petType = 'cat',
+     pets = [],
+     graphicsQuality = 'medium'
+ }) => {
+   const theme = THEMES[treeStyle] || THEMES['oak'];
+   const [isQRUploadOpen, setIsQRUploadOpen] = useState(false);
+   const [showExplosion, setShowExplosion] = useState(false);
+   const [floatingTexts, setFloatingTexts] = useState<Array<{ id: number; text: string; position: [number, number, number]; color: string }>>([]);
+   const prevLeafCount = useRef(leaves);
+
+   // Trigger explosion and floating text logic
+   React.useEffect(() => {
+     if (leaves > prevLeafCount.current) {
+        setShowExplosion(true);
+        const t = setTimeout(() => setShowExplosion(false), 2000);
+        
+        // Add floating text
+        const id = Date.now();
+        const randomX = (Math.random() - 0.5) * 3;
+        const randomZ = (Math.random() - 0.5) * 3;
+        const height = 4 + Math.random() * 2;
+        
+        setFloatingTexts(prev => [
+            ...prev, 
+            { id, text: "+1 🍃", position: [randomX, height, randomZ], color: theme.leaves[1] }
+        ]);
+
+        // Cleanup text after 2 seconds
+        setTimeout(() => {
+            setFloatingTexts(prev => prev.filter(item => item.id !== id));
+        }, 2000);
+
+        prevLeafCount.current = leaves;
+        return () => clearTimeout(t);
+     }
+     prevLeafCount.current = leaves;
+   }, [leaves, theme]);
+
+   // Calculate Growth Stage
+   const { growthScale, branchCount } = useMemo(() => {
+      let scale = 1;
+      let branchCount = 6;
+      
+      if (leaves < 50) {
+          // Stage 1: Sapling
+          const progress = Math.max(0, leaves / 50);
+          scale = 0.8 + (progress * 0.2); // 0.8 -> 1.0
+          branchCount = 6;
+      } else if (leaves < 100) {
+          // Stage 2: Young Tree
+          const progress = (leaves - 50) / 50;
+          scale = 1.0 + (progress * 0.2); // 1.0 -> 1.2
+          branchCount = 6 + Math.floor(progress * 4); // 6 -> 10
+      } else {
+          // Stage 3: Mature Tree
+          // Capping at 1000 for max growth effect, though leaves can go higher
+          const progress = Math.min((leaves - 100) / 900, 1);
+          scale = 1.2 + (progress * 0.8); // 1.2 -> 2.0
+          branchCount = 10 + Math.floor(progress * 10); // 10 -> 20
+      }
+      return { growthScale: scale, branchCount };
+  }, [leaves]);
 
   // Calculate Days Together
   const daysTogether = useMemo(() => {
@@ -1272,10 +1508,46 @@ const LoveTree3D: React.FC<LoveTree3DProps> = ({
          </mesh>
 
          {/* Tree */}
-         <Tree theme={theme} scale={1.5} leafCount={leaves} windFactor={windFactor} />
+         <Tree theme={theme} scale={growthScale} leafCount={leaves} windFactor={windFactor} branchCount={branchCount} quality={graphicsQuality} />
+         
+          {/* Leaf Explosion */}
+          {showExplosion && <LeafExplosion count={30} color={theme.particle} />}
 
-         {/* Pet */}
-         <Pet3D emotion={petEmotion} theme={theme} />
+          {/* Floating Texts */}
+          {floatingTexts.map(ft => (
+             <FloatingText key={ft.id} text={ft.text} position={ft.position} color={ft.color} />
+          ))}
+
+          {/* Pets */}
+          {(!pets || pets.length === 0) ? (
+            <Pet3D emotion={petEmotion} theme={theme} petType={petType} startPos={[2, 0, 2]} />
+         ) : (() => {
+           const petRefs = pets.map(() => React.createRef<THREE.Group | null>());
+           return pets.map((pet, i) => {
+             // Scatter pets around the tree in a circle initially
+             const angle = (i / pets.length) * Math.PI * 2;
+             const radius = 2.5 + (i * 0.5);
+             const x = Math.cos(angle) * radius;
+             const z = Math.sin(angle) * radius;
+             
+             // Filter out self for social awareness
+             const companions = pets
+                .map((p, idx) => ({ ref: petRefs[idx], type: p.type }))
+                .filter((_, idx) => idx !== i);
+
+             return (
+               <Pet3D 
+                 ref={petRefs[i]}
+                 key={pet.id} 
+                 emotion={petEmotion} 
+                 theme={theme} 
+                 petType={pet.type} 
+                 startPos={[x, 0, z]} 
+                 otherPets={companions}
+               />
+             );
+           });
+         })()}
 
           {/* Garden Props */}
           <group>
@@ -1287,6 +1559,7 @@ const LoveTree3D: React.FC<LoveTree3DProps> = ({
                     type={pos.type} 
                     scale={pos.scale} 
                     windFactor={windFactor} 
+                    quality={graphicsQuality}
                 />
              ))}
 
@@ -1321,6 +1594,78 @@ const LoveTree3D: React.FC<LoveTree3DProps> = ({
          <ContactShadows scale={30} blur={2.5} far={4} opacity={0.4} />
 
       </Canvas>
+      
+      <AnimatePresence>
+        {showQRCode && (
+          <motion.div 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="fixed bottom-6 left-6 z-[70] hidden md:flex flex-col items-center gap-2 group"
+          >
+             <div 
+               className="bg-white/80 backdrop-blur-xl p-3 rounded-[2rem] shadow-2xl border border-white/50 cursor-pointer hover:scale-105 transition-transform relative overflow-hidden active:scale-95"
+               onClick={() => setIsQRUploadOpen(true)}
+             >
+                <img 
+                  src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://example.com/upload&color=ec4899" 
+                  alt="Upload QR" 
+                  className="w-24 h-24 rounded-2xl"
+                />
+                <div className="absolute inset-0 bg-pink-500/0 group-hover:bg-pink-500/5 transition-colors flex items-center justify-center">
+                   <i className="fas fa-expand text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </div>
+             </div>
+             <div className="bg-white/90 backdrop-blur-md px-3 py-1 rounded-full shadow-lg border border-pink-100 flex items-center gap-2">
+                <span className="flex h-2 w-2 relative">
+                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                   <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
+                </span>
+                <p className="text-[9px] font-black text-pink-500 uppercase tracking-widest leading-none">Scan to Upload 📱</p>
+             </div>
+          </motion.div>
+        )}
+
+        {isQRUploadOpen && (
+           <motion.div 
+             initial={{ opacity: 0 }}
+             animate={{ opacity: 1 }}
+             exit={{ opacity: 0 }}
+             className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6"
+             onClick={() => setIsQRUploadOpen(false)}
+           >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden flex flex-col"
+                onClick={e => e.stopPropagation()}
+              >
+                 <div className="p-8 text-center space-y-4">
+                    <div className="w-20 h-20 bg-pink-100 rounded-[2rem] flex items-center justify-center text-pink-500 text-3xl mx-auto mb-2">
+                       <i className="fas fa-mobile-alt"></i>
+                    </div>
+                    <h2 className="text-2xl font-black text-gray-800 tracking-tight">Mobile Memory Upload</h2>
+                    <p className="text-sm text-gray-400 font-medium">Scanning this QR code on your phone opens a mobile-optimized upload page to instantly add memories to your garden!</p>
+                    
+                    <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-100 mt-6 group hover:border-pink-200 transition-all cursor-pointer" onClick={() => setIsQRUploadOpen(false)}>
+                       <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-gray-400 group-hover:text-pink-500 shadow-sm mx-auto mb-3 transition-colors">
+                          <i className="fas fa-cloud-upload-alt"></i>
+                       </div>
+                       <p className="text-xs font-bold text-gray-500 group-hover:text-pink-500">Demo: Simulate a mobile file select</p>
+                    </div>
+
+                    <button 
+                      onClick={() => setIsQRUploadOpen(false)}
+                      className="w-full bg-gray-100 text-gray-500 font-black py-4 rounded-3xl mt-4 hover:bg-gray-200 transition-all uppercase tracking-widest text-xs"
+                    >
+                       Close Preview
+                    </button>
+                 </div>
+                 <div className="bg-pink-500 p-1"></div>
+              </motion.div>
+           </motion.div>
+        )}
+      </AnimatePresence>
       
  
 

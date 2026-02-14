@@ -7,6 +7,7 @@ import { Interaction, MediaContent } from '../types';
 import TimelineSpreadsheet from './TimelineSpreadsheet';
 import { timelineAPI } from '../services/api';
 import DatePicker from 'react-datepicker';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 import "react-datepicker/dist/react-datepicker.css";
 
 interface TimelineProps {
@@ -17,6 +18,7 @@ interface TimelineProps {
   onUpdateInteraction?: (interaction: Interaction) => void;
   onDeleteInteraction?: (id: string) => void;
   onOpenSpreadsheet?: () => void;
+  cardScale?: number;
 }
 
 const Timeline: React.FC<TimelineProps> = ({ 
@@ -26,13 +28,15 @@ const Timeline: React.FC<TimelineProps> = ({
   onAddInteraction, 
   onUpdateInteraction, 
   onDeleteInteraction,
-  onOpenSpreadsheet
+  onOpenSpreadsheet,
+  cardScale = 1.0
 }) => {
-  const [zoomLevel, setZoomLevel] = useState<1 | 5 | 10 | 30>(1);
+  const [zoomLevel, setZoomLevel] = useState<1 | 5 | 10 | 30 | 60 | 100 | 200 | 500>(1);
   const [activeItem, setActiveItem] = useState<Interaction | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const [layoutMode, setLayoutMode] = useState<'wave' | 'snake'>('wave');
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
   
   // Media & Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -107,9 +111,9 @@ const Timeline: React.FC<TimelineProps> = ({
         // Ensure endYear covers current year for "Today" marker
         const endYear = Math.max(new Date().getFullYear(), endDate.getFullYear());
         const totalRows = endYear - startYear + 1;
-        const rowHeight = zoomLevel === 1 ? 180 : zoomLevel === 5 ? 300 : zoomLevel === 10 ? 500 : 1000;
+        const rowHeight = zoomLevel === 1 ? 180 : zoomLevel === 5 ? 300 : zoomLevel === 10 ? 500 : zoomLevel === 30 ? 1000 : zoomLevel === 60 ? 2000 : zoomLevel === 100 ? 3500 : zoomLevel === 200 ? 7000 : 15000;
         const containerWidth = Math.min(windowWidth, 800); 
-        const sidePad = windowWidth < 640 ? 40 : (zoomLevel === 1 ? 160 : zoomLevel === 5 ? 100 : zoomLevel === 10 ? 60 : 40);
+        const sidePad = windowWidth < 640 ? 15 : (zoomLevel === 1 ? 160 : zoomLevel === 5 ? 100 : zoomLevel === 10 ? 60 : 40);
         const activeWidth = containerWidth - (sidePad * 2);
         
         let pathD = '';
@@ -146,7 +150,7 @@ const Timeline: React.FC<TimelineProps> = ({
            const yearEnd = new Date(currentYear + 1, 0, 1).getTime();
            const yearDuration = yearEnd - yearStart;
 
-           yearItems.forEach(item => {
+           yearItems.forEach((item, index) => {
               const progress = (item.timestamp.getTime() - yearStart) / yearDuration;
               const visualProgress = progress; 
               
@@ -154,13 +158,17 @@ const Timeline: React.FC<TimelineProps> = ({
                 ? sidePad + (visualProgress * activeWidth)
                 : (containerWidth - sidePad) - (visualProgress * activeWidth);
                 
+              // Staggering: Offset Y slightly if items are tight
+              const staggerY = yearItems.length > 1 ? (index % 2 === 0 ? -30 : 30) : 0;
+                
               itemsWithPos.push({
                  ...item,
                  x,
-                 y: rowY,
-                 isRightSide: !isEven, // tooltip direction preference
+                 y: rowY + staggerY,
+                 isRightSide: !isEven, 
                  isEvenRow: isEven,
-                 isFuture: item.timestamp.getTime() > Date.now()
+                 isFuture: item.timestamp.getTime() > Date.now(),
+                 rotation: (index % 3 - 1) * 2 // -2, 0, 2
               });
            });
         }
@@ -188,7 +196,7 @@ const Timeline: React.FC<TimelineProps> = ({
     }
 
     // --- WAVE MODE CALCULATION ---
-    const pxPerYear = zoomLevel === 1 ? 150 : zoomLevel === 5 ? 300 : zoomLevel === 10 ? 600 : 1500; 
+    const pxPerYear = zoomLevel === 1 ? 150 : zoomLevel === 5 ? 300 : zoomLevel === 10 ? 600 : zoomLevel === 30 ? 1500 : zoomLevel === 60 ? 3000 : zoomLevel === 100 ? 6000 : zoomLevel === 200 ? 12000 : 30000; 
     const pxPerMs = pxPerYear / (365 * 24 * 60 * 60 * 1000);
     
     // Check total height required
@@ -223,15 +231,30 @@ const Timeline: React.FC<TimelineProps> = ({
       const y = 50 + timeOffset * pxPerMs; 
       const x = centerX + Math.sin(y / wavelength * Math.PI * 2) * amplitude;
       
-      const isRightSide = x < centerX; 
       const isFuture = item.timestamp.getTime() > nowTime;
+
+      // Enhanced Staggering for anti-overlap
+      let staggerX = 0;
+      let sideOffset = 0;
+      
+      // Force alternating sides if very close
+      const isRightSide = index % 2 === 0;
+
+      if (index > 0) {
+        const prevY = 50 + (sorted[index-1].timestamp.getTime() - startTime) * pxPerMs;
+        if (y - prevY < 120) { // If closer than 120px vertically
+           staggerX = (index % 3 - 1) * 30; // -30, 0, 30
+           sideOffset = isRightSide ? 40 : -40;
+        }
+      }
 
       return {
         ...item,
-        x,
+        x: x + staggerX + sideOffset,
         y,
         isRightSide,
-        isFuture
+        isFuture,
+        rotation: (index % 4 - 2) * 2 // Jitter
       };
     });
 
@@ -366,84 +389,108 @@ const Timeline: React.FC<TimelineProps> = ({
       {/* Header Controls */}
       <div className="fixed top-28 right-4 lg:right-10 z-50 flex flex-col gap-4 items-end pointer-events-none">
          
-         <div className="pointer-events-auto flex flex-col gap-2 items-end">
-             {/* MODE TOGGLE */}
-             <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-full shadow-lg border border-pink-100 flex gap-1">
-                <button 
-                  onClick={() => setLayoutMode('wave')}
-                  className={`p-2 rounded-xl transition-all ${layoutMode === 'wave' ? 'bg-pink-500 text-white shadow-sm' : 'text-gray-400 hover:bg-pink-50'}`}
-                  title="Wave View"
-                >
-                  <i className="fas fa-water rotate-90 text-xs"></i>
-                </button>
-                 <button 
-                   onClick={() => setLayoutMode('snake')}
-                   className={`p-2 rounded-xl transition-all ${layoutMode === 'snake' ? 'bg-pink-500 text-white shadow-sm' : 'text-gray-400 hover:bg-pink-50'}`}
-                   title="Snake Year View"
-                 >
-                    <i className="fas fa-road text-xs"></i>
-                 </button>
-                 <div className="w-px h-4 bg-gray-200 self-center mx-1"></div>
-                 <button 
-                   onClick={() => onOpenSpreadsheet?.()}
-                   className="p-2 rounded-xl text-gray-400 hover:bg-pink-50 hover:text-pink-500 transition-all"
-                   title="Open Spreadsheet (Bulk Edit)"
-                 >
-                    <i className="fas fa-table text-xs"></i>
-                 </button>
-              </div>
+          <div className="pointer-events-auto flex flex-col gap-2 items-end">
+              {/* COMBINED TOOLBAR - VERTICAL */}
+               <div className="bg-white/90 backdrop-blur-md p-1 md:p-1.5 rounded-2xl shadow-lg border border-pink-100 flex flex-col items-center gap-2 md:gap-3 relative isolate pb-2 md:pb-4">
+                  {/* Mode Toggles */}
+                  <div className="flex flex-col items-center bg-gray-50/50 rounded-xl p-0.5 gap-1">
+                    {([
+                        { id: 'wave', label: 'Wave', icon: 'fa-water fa-rotate-90' },
+                        { id: 'snake', label: 'Snake', icon: 'fa-road' }
+                    ] as const).map((mode) => (
+                        <button
+                            key={mode.id}
+                            onClick={() => setLayoutMode(mode.id)}
+                             className={`
+                                 relative z-10 p-1.5 md:p-3 rounded-xl text-[10px] md:text-xs font-black transition-colors flex flex-col items-center justify-center gap-1 w-full
+                                 ${layoutMode === mode.id ? 'text-white' : 'text-gray-400 hover:text-pink-400'}
+                             `}
+                        >
+                            {layoutMode === mode.id && (
+                                <motion.div
+                                    layoutId="activeLayoutTab"
+                                    className="absolute inset-0 bg-gradient-to-r from-pink-500 to-rose-500 rounded-xl shadow-md -z-10"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                            )}
+                             <i className={`fas ${mode.icon} text-sm md:text-lg`}></i>
+                        </button>
+                    ))}
+                  </div>
 
-              <div className="bg-white/80 backdrop-blur-md p-2 rounded-full shadow-lg border border-pink-100 flex items-center gap-1">
-                 <button 
-                   onClick={() => {
-                     if (zoomLevel === 30) setZoomLevel(10);
-                     else if (zoomLevel === 10) setZoomLevel(5);
-                     else setZoomLevel(1);
-                   }}
-                   className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:bg-pink-50 hover:text-pink-500 transition-all"
-                   title="Zoom Out"
-                 >
-                   <i className="fas fa-minus text-xs"></i>
-                 </button>
-                 <div className="flex bg-gray-50 rounded-full p-1 gap-1">
-                   {[1, 5, 10, 30].map((s) => (
-                     <button
-                       key={s}
-                       onClick={() => setZoomLevel(s as any)}
-                       className={`w-10 h-10 rounded-full text-[10px] font-black transition-all flex flex-col items-center justify-center ${
-                         zoomLevel === s 
-                           ? 'bg-pink-500 text-white shadow-md scale-110' 
-                           : 'text-gray-400 hover:text-pink-400'
-                       }`}
-                     >
-                       <span>{s}x</span>
-                     </button>
-                   ))}
-                 </div>
-                 <button 
-                   onClick={() => {
-                     if (zoomLevel === 1) setZoomLevel(5);
-                     else if (zoomLevel === 5) setZoomLevel(10);
-                     else setZoomLevel(30);
-                   }}
-                   className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:bg-pink-50 hover:text-pink-500 transition-all"
-                   title="Zoom In"
-                 >
-                   <i className="fas fa-plus text-xs"></i>
-                 </button>
+                  <div className="w-6 h-px bg-pink-100"></div>
+
+                  {/* Zoom Slider - Vertical */}
+                  <div className="flex flex-col items-center gap-2 py-1">
+                       <button onClick={() => setZoomLevel(prev => {
+                          const levels = [1, 5, 10, 30, 60, 100, 200, 500];
+                          const idx = levels.indexOf(prev);
+                          return idx < levels.length - 1 ? levels[idx+1] as any : prev;
+                       })} className="text-gray-400 hover:text-pink-500 transition-colors">
+                          <i className="fas fa-search-plus text-[10px]"></i>
+                       </button>
+
+                        <div className="h-16 md:h-24 w-6 flex items-center justify-center">
+                           <input 
+                              type="range" 
+                              min="0" 
+                              max="7" 
+                              step="1"
+                              value={[1, 5, 10, 30, 60, 100, 200, 500].indexOf(zoomLevel)}
+                               className="w-16 md:w-24 h-1 md:h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-pink-500 hover:accent-pink-600 transition-all -rotate-90"
+                              onChange={(e) => {
+                                 const val = parseInt(e.target.value);
+                                 const levels: (1 | 5 | 10 | 30 | 60 | 100 | 200 | 500)[] = [1, 5, 10, 30, 60, 100, 200, 500];
+                                 setZoomLevel(levels[val]);
+                              }}
+                           />
+                       </div>
+                       
+                       <button onClick={() => setZoomLevel(prev => {
+                          const levels = [1, 5, 10, 30, 60, 100, 200, 500];
+                          const idx = levels.indexOf(prev);
+                          return idx > 0 ? levels[idx-1] as any : prev;
+                       })} className="text-gray-400 hover:text-pink-500 transition-colors">
+                          <i className="fas fa-search-minus text-[10px]"></i>
+                       </button>
+                  </div>
+                  
+                  <div className="w-6 h-px bg-pink-100"></div>
+
+                  <button 
+                    onClick={() => onOpenSpreadsheet?.()}
+                    className="p-2 rounded-xl text-gray-400 hover:bg-pink-50 hover:text-pink-500 transition-all flex items-center justify-center gap-2 group"
+                    title="Open Spreadsheet (Bulk Edit)"
+                  >
+                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-pink-50 flex items-center justify-center group-hover:bg-pink-100 transition-colors">
+                         <i className="fas fa-table text-pink-500 text-xs md:text-sm"></i>
+                      </div>
+                  </button>
               </div>
-         </div>
+          </div>
          
-         <button 
-            onClick={handleAddNew}
-            className="pointer-events-auto w-12 h-12 bg-pink-500 text-white rounded-full shadow-xl shadow-pink-200 flex items-center justify-center hover:scale-110 hover:rotate-90 transition-all group relative"
-         >
+          <button 
+             onClick={handleAddNew}
+             className="pointer-events-auto w-10 h-10 md:w-12 md:h-12 bg-pink-500 text-white rounded-full shadow-xl shadow-pink-200 flex items-center justify-center hover:scale-110 hover:rotate-90 transition-all group relative"
+          >
            <i className="fas fa-plus text-lg"></i>
            <span className="absolute right-14 bg-black/80 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Add Memory or Plan</span>
          </button>
       </div>
+
+
       
-      <div className="w-full flex justify-center pt-10 pb-40 relative">
+      {/* Timeline Header Section */}
+      <div className="text-center mb-8 md:mb-16 pt-4 md:pt-0">
+        <h2 className="font-pacifico text-2xl md:text-4xl text-pink-500 mb-2">Our Story</h2>
+        <p className="text-[10px] md:text-base text-gray-500 font-quicksand max-w-xs md:max-w-md mx-auto px-4">Reliving every beautiful moment together ✨</p>
+      </div>
+
+      {/* WAVE / SNAKE VIEW (Original SVGs) */}
+      <div className="w-full flex justify-center pt-5 pb-40 relative">
+        {/* Subtle Stage Background */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 md:w-96 h-32 bg-gradient-to-b from-pink-50/50 to-transparent rounded-full blur-3xl -z-10 pointer-events-none"></div>
+        
         <div style={{ height: timelineLayout.height, width: '100%', maxWidth: windowWidth < 640 ? '100%' : '1200px', position: 'relative' }}>
           
           {/* THE SVG PATH LINE */}
@@ -570,74 +617,109 @@ const Timeline: React.FC<TimelineProps> = ({
 
                       {/* CONTENT CARD */}
                       <div 
-                        className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-2 w-max max-w-[120px] md:max-w-[180px] group cursor-pointer z-30 ${
+                        className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-2 w-max max-w-[140px] md:max-w-[200px] group cursor-pointer z-30 ${
                           timelineLayout.snakeMode 
-                            ? 'flex-col -translate-y-[calc(100%+15px)]' 
-                            : (item.isRightSide ? 'flex-row left-8' : 'flex-row-reverse right-8')
+                            ? 'flex-col -translate-y-[calc(100%+20px)]' 
+                            : (item.isRightSide ? 'flex-row left-5 md:left-10' : 'flex-row-reverse right-5 md:right-10')
                         }`}
                         onClick={() => handleEditClick(item)}
                       >
                          {/* Connecting Line (Hidden in snake mode top-float style, or maybe strictly vertical line) */}
                          <div className={`absolute ${
                            timelineLayout.snakeMode
-                             ? 'w-[2px] h-4 bg-pink-200 -bottom-4 left-1/2 -translate-x-1/2'
-                             : `h-[2px] w-8 top-1/2 -translate-y-1/2 ${item.isFuture ? 'bg-purple-200' : 'bg-pink-200'} ${item.isRightSide ? '-left-8' : '-right-8'}`
+                             ? 'w-[2px] h-5 bg-pink-200 -bottom-5 left-1/2 -translate-x-1/2'
+                             : `h-[2px] w-5 md:w-10 top-1/2 -translate-y-1/2 ${item.isFuture ? 'bg-purple-200' : 'bg-pink-200'} ${item.isRightSide ? '-left-5 md:-left-10' : '-right-5 md:-right-10'}`
                          }`} />
 
-                         <div className="relative bg-white/80 hover:bg-white backdrop-blur-md p-3 rounded-[2rem] shadow-sm border hover:shadow-xl hover:scale-105 transition-all duration-300 text-center">
-                            {/* Date Badge */}
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                               <span className={`px-2 py-0.5 rounded-full text-[8px] font-black text-white uppercase tracking-wider shadow-sm ${
-                                  item.isFuture ? 'bg-purple-400' : getMonthColor(item.timestamp)
-                               }`}>
-                                 {getMonthName(item.timestamp)} {item.timestamp.getDate()}
-                               </span>
-                            </div>
+                           <div 
+                             className={`relative group transition-transform ${item.mediaItems && item.mediaItems.filter((mi: MediaContent) => mi.type === 'image').length > 1 ? 'hover:scale-105' : ''}`}
+                             style={{ transform: `rotate(${item.rotation || 0}deg)` }}
+                           >
+                             {/* Background Frames for "Stacked" Effect */}
+                             {(() => {
+                                const imagesCount = item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image').length || 0;
+                                if (imagesCount <= 1) return null;
+                                return (
+                                  <>
+                                     <div className="absolute inset-0 bg-white border border-gray-100 shadow-sm -rotate-6 -translate-x-1.5 translate-y-1 rounded-sm opacity-60"></div>
+                                     <div className="absolute inset-0 bg-white border border-gray-100 shadow-sm rotate-3 translate-x-1 translate-y-0.5 rounded-sm opacity-40"></div>
+                                  </>
+                                );
+                             })()}
 
-                            <p className="text-[10px] md:text-xs font-bold text-gray-700 leading-snug mt-2 line-clamp-3">
-                              {item.text}
-                            </p>
+                             <div 
+                                className="relative bg-white p-1.5 md:p-2 rounded-sm shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-gray-100 hover:shadow-2xl hover:-translate-y-2 hover:rotate-2 transition-all duration-300 text-center w-24 md:w-36 self-center"
+                                style={{ transform: `scale(${cardScale})`, transformOrigin: 'center' }}
+                             >
+                             {/* Hero Image Section */}
+                             <div className={`w-full relative overflow-hidden bg-gray-50 rounded-xs ${
+                                (item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image').length || (item.media?.type === 'image' ? 1 : 0)) > 0 ? 'aspect-square mb-2' : 'h-0 mb-0'
+                             }`}>
+                                {/* IMAGE THUMBNAIL - POLAROID MAIN */}
+                                 {(() => {
+                                   const images = item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image') || (item.media?.type === 'image' ? [item.media] : []);
+                                   if (images.length === 0) return null;
+                                   
+                                   return (
+                                     <div className="w-full h-full group">
+                                        <img 
+                                           src={images[0].url} 
+                                           alt="" 
+                                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
+                                           loading="lazy"
+                                        />
+                                        
+                                        {images.length > 1 && (
+                                          <div className="absolute top-1 right-1 bg-black/50 text-white text-[8px] py-0.5 px-1.5 rounded-sm backdrop-blur-sm">
+                                             <i className="fas fa-images mr-1"></i> {images.length}
+                                          </div>
+                                        )}
+                                     </div>
+                                   );
+                                })()}
+                             </div>
 
-                            {item.location && (
-                               <div className="mt-1.5 flex items-center justify-center gap-1 text-[9px] font-bold text-pink-400">
-                                 <i className="fas fa-map-marker-alt"></i>
-                                 <span className="truncate max-w-[100px]">{item.location}</span>
-                               </div>
-                            )}
-                            
-                             {((item.mediaItems?.length || 0) > 0 || !!item.media) && (
-                               <div className="mt-2 flex justify-center gap-2">
-                                 <div className="px-2 py-1 bg-gray-100 rounded-lg text-[9px] font-bold text-gray-500 flex items-center gap-1">
-                                   <i className={`fas ${
-                                     (item.mediaItems?.length || 0) > 1 
-                                       ? 'fa-images text-pink-400' 
-                                       : (item.media?.type === 'video' || item.mediaItems?.[0]?.type === 'video')
-                                         ? 'fa-video text-blue-400' 
-                                         : 'fa-image text-pink-400'
-                                   }`}></i>
-                                   <span className="capitalize">
-                                     {(item.mediaItems?.length || 0) > 1 
-                                       ? `${item.mediaItems?.length} Photos` 
-                                       : (item.media?.type || item.mediaItems?.[0]?.type || 'Image')}
-                                   </span>
-                                 </div>
-                               </div>
-                            )}
-                            
-                            {item.isFuture && (
-                               <div className="mt-1 text-[8px] font-black text-purple-400 uppercase tracking-widest">
-                                  Upcoming Plan
-                               </div>
-                            )}
-                         </div>
-                      </div>
-                    </motion.div>
+                             {/* Bottom Margin for Caption & Date */}
+                             <div className="flex flex-col items-start px-1 pb-1">
+                                <p className="text-[7.5px] md:text-[10px] font-bold text-gray-800 leading-tight line-clamp-2 text-left w-full h-4 md:h-6">
+                                  {item.text}
+                                </p>
+                                
+                                <div className="mt-2 w-full flex justify-between items-center border-t border-gray-50 pt-1.5">
+                                   <div className="flex flex-col items-start">
+                                      <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-tighter ${
+                                          item.isFuture ? 'text-purple-400' : 'text-gray-400'
+                                      }`}>
+                                         {getMonthName(item.timestamp)} {item.timestamp.getDate()}
+                                      </span>
+                                      {item.isFuture && (
+                                         <span className="text-[7px] font-black text-purple-300 uppercase tracking-widest leading-none">PLAN</span>
+                                      )}
+                                   </div>
+                                   
+                                   <div className="flex items-center gap-1.5">
+                                      {item.location && <i className="fas fa-map-marker-alt text-[8px] text-pink-300"></i>}
+                                      {((item.mediaItems?.length || 0) > 0 || !!item.media) && (
+                                         <i className={`fas ${
+                                            (item.mediaItems?.filter((mi: MediaContent) => mi.type === 'video').length > 0 || item.media?.type === 'video')
+                                              ? 'fa-video text-blue-300' 
+                                              : 'fa-camera text-pink-300'
+                                         } text-[8px]`}></i>
+                                      )}
+                                   </div>
+                                </div>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+                 </motion.div>
                  </React.Fragment>
                );
             })}
           </AnimatePresence>
         </div>
       </div>
+
 
        {/* EDIT/ADD MODAL */}
        <AnimatePresence>
@@ -646,19 +728,20 @@ const Timeline: React.FC<TimelineProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md"
+            className={`fixed inset-0 z-[100] flex ${windowWidth < 768 ? 'items-end' : 'items-center justify-center'} p-0 md:p-4 bg-black/40 backdrop-blur-md`}
             onClick={() => setActiveItem(null)}
           >
             <motion.div
-              initial={{ scale: 0.9, y: 20 }}
+              initial={windowWidth < 768 ? { y: "100%" } : { scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white w-full max-w-md rounded-[4rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              exit={windowWidth < 768 ? { y: "100%" } : { scale: 0.9, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className={`bg-white w-full ${windowWidth < 768 ? 'rounded-t-[3rem] h-[85vh]' : 'max-w-md rounded-[4rem] max-h-[90vh]'} shadow-2xl overflow-hidden flex flex-col`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className={`p-6 text-white flex justify-between items-center shrink-0 transition-colors ${
                 isFutureDate ? 'bg-purple-500' : 'bg-pink-500'
-              }`}>
+              } ${windowWidth < 768 ? 'rounded-t-[3rem]' : ''}`}>
                 <h3 className="font-pacifico text-2xl">
                   {isNew 
                     ? (isFutureDate ? 'New Plan' : 'New Memory') 
@@ -682,13 +765,13 @@ const Timeline: React.FC<TimelineProps> = ({
                        <div className="flex items-center gap-2">
                          <DatePicker
                            selected={activeItem.timestamp}
-                           onChange={(date: Date | null) => date && setActiveItem({ ...activeItem, timestamp: date })}
+                           onChange={(date: Date | null) => date && setActiveItem({ ...activeItem!, timestamp: date })}
                            showTimeSelect
                            dateFormat="Pp"
                            className="bg-transparent border-none font-bold text-gray-700 outline-none p-0 cursor-pointer text-lg focus:ring-0 flex-1"
                          />
-                         <button 
-                           onClick={() => setActiveItem({ ...activeItem, timestamp: new Date() })}
+                          <button 
+                            onClick={() => setActiveItem({ ...activeItem!, timestamp: new Date() })}
                            className={`text-[9px] font-black uppercase px-2 py-1 rounded-md border transition-all ${isFutureDate ? 'text-purple-500 border-purple-200 hover:bg-purple-50' : 'text-pink-500 border-pink-200 hover:bg-pink-50'}`}
                          >
                            Today
@@ -702,10 +785,10 @@ const Timeline: React.FC<TimelineProps> = ({
                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Location</label>
                    <div className="relative">
                      <i className={`fas fa-map-pin absolute left-4 top-1/2 -translate-y-1/2 ${isFutureDate ? 'text-purple-400' : 'text-pink-400'}`}></i>
-                     <input 
-                       type="text" 
-                       value={activeItem.location || ""} 
-                       onChange={(e) => setActiveItem({ ...activeItem, location: e.target.value })}
+                      <input 
+                        type="text" 
+                        value={activeItem.location || ""} 
+                        onChange={(e) => setActiveItem({ ...activeItem!, location: e.target.value })}
                        className={`w-full border-2 rounded-[2rem] p-4 pl-10 text-sm font-bold text-gray-700 outline-none transition-all bg-gray-50/50 ${
                          isFutureDate ? 'border-purple-50 focus:ring-purple-300' : 'border-pink-50 focus:ring-300'
                        }`}
@@ -753,7 +836,10 @@ const Timeline: React.FC<TimelineProps> = ({
                         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                           {activeItem.mediaItems?.map((m, idx) => (
                             <div key={idx} className="relative group shrink-0">
-                               <div className="w-16 h-16 bg-gray-100 rounded-2xl overflow-hidden border-2 border-gray-50 shadow-sm relative">
+                               <div 
+                                 className="w-16 h-16 bg-gray-100 rounded-2xl overflow-hidden border-2 border-gray-50 shadow-sm relative cursor-pointer hover:border-pink-300 transition-colors"
+                                 onClick={() => m.type === 'image' && setViewingImage(m.url)}
+                               >
                                   {m.type === 'image' && <img src={m.url} className="w-full h-full object-cover" />}
                                   {m.type === 'video' && <div className="w-full h-full flex items-center justify-center text-lg">🎥</div>}
                                   {m.type === 'audio' && <div className="w-full h-full flex items-center justify-center text-lg">🎤</div>}
@@ -782,9 +868,9 @@ const Timeline: React.FC<TimelineProps> = ({
                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
                       {isFutureDate ? 'The Plan' : 'The Story'}
                    </label>
-                   <textarea 
-                     value={activeItem.text}
-                     onChange={(e) => setActiveItem({ ...activeItem, text: e.target.value })}
+                      <textarea 
+                        value={activeItem.text || ""} 
+                        onChange={(e) => setActiveItem({ ...activeItem!, text: e.target.value })}
                      className={`w-full h-32 border-2 rounded-[2rem] p-4 text-sm font-bold text-gray-700 outline-none resize-none transition-all bg-gray-50/50 ${
                         isFutureDate ? 'border-purple-50 focus:ring-purple-300' : 'border-pink-50 focus:ring-pink-300'
                      }`}
@@ -820,6 +906,34 @@ const Timeline: React.FC<TimelineProps> = ({
                 </div>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* FULL SCREEN IMAGE VIEWER */}
+      <AnimatePresence>
+        {viewingImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+            onClick={() => setViewingImage(null)}
+          >
+            <button 
+              className="absolute top-6 right-6 text-white text-xl bg-black/50 hover:bg-black/80 w-12 h-12 flex items-center justify-center rounded-full transition-all"
+              onClick={() => setViewingImage(null)}
+            >
+              <i className="fas fa-times"></i>
+            </button>
+            <motion.img
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              src={viewingImage}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
           </motion.div>
         )}
       </AnimatePresence>
