@@ -37,6 +37,12 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, onStepChange,
     setNoButtonPos({ x: offsetX, y: offsetY, rotate: rotation });
   }, []);
 
+  // Keep track of the current button position for the event listener
+  const noButtonPosRef = useRef(noButtonPos);
+  useEffect(() => {
+    noButtonPosRef.current = noButtonPos;
+  }, [noButtonPos]);
+
   // Proximity detection logic
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -46,6 +52,7 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, onStepChange,
       const buttonCenterX = rect.left + rect.width / 2;
       const buttonCenterY = rect.top + rect.height / 2;
 
+      // Distance to the ACTUAL current button position
       const d = Math.sqrt(
         Math.pow(e.clientX - buttonCenterX, 2) + 
         Math.pow(e.clientY - buttonCenterY, 2)
@@ -53,8 +60,25 @@ const ProposalScreen: React.FC<ProposalScreenProps> = ({ onAccept, onStepChange,
 
       setDistance(d);
 
-      // Increased reaction distance to 220px - makes it run away sooner (harder to catch)
-      if (d < 220) {
+      // Calculate distance to the STARTING position of the button
+      // We subtract the current offset to find where the button "should" be
+      const currentPos = noButtonPosRef.current;
+      const startCenterX = buttonCenterX - currentPos.x;
+      const startCenterY = buttonCenterY - currentPos.y;
+
+      const distToStart = Math.sqrt(
+        Math.pow(e.clientX - startCenterX, 2) + 
+        Math.pow(e.clientY - startCenterY, 2)
+      );
+
+      // Reset if far from start position (leash effect)
+      // 400px feels like a reasonable "far" distance
+      if ((currentPos.x !== 0 || currentPos.y !== 0) && distToStart > 400) {
+        setNoButtonPos({ x: 0, y: 0, rotate: 0 });
+        setDistance(1000); // Reset distance so it doesn't immediately jump again
+      } 
+      // Otherwise run away if too close to current position
+      else if (d < 220) {
         moveButton();
       }
     };

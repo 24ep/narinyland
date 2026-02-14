@@ -23,7 +23,10 @@ router.get('/', async (req, res) => {
     res.json(memories);
   } catch (error) {
     console.error('Error fetching memories:', error);
-    res.status(500).json({ error: 'Failed to fetch memories' });
+    res.status(500).json({ 
+      error: 'Failed to fetch memories', 
+      details: error instanceof Error ? error.message : String(error) 
+    });
   }
 });
 
