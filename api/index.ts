@@ -1,4 +1,4 @@
 
-import app from '../server/src/index.js';
+import app from '../dist/server/src/index.js';
 
 export default app;
