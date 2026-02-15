@@ -39,6 +39,10 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
     if (/instagram\.com\/(p|reel|tv)\//.test(url)) {
       return `/api/instagram/image?url=${encodeURIComponent(url)}`;
     }
+    // If it's a relative API URL, convert to full URL
+    if (url.startsWith('/api/')) {
+      return `${window.location.origin}${url}`;
+    }
     return url;
   };
 

@@ -2,36 +2,21 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { uploadTimelineMedia, deleteFile } from '@/lib/s3';
 
-// PUT /api/timeline/[id]
-export async function PUT(
+// POST /api/timeline/[id] - for FormData uploads
+export async function POST(
   request: Request,
   props: { params: Promise<{ id: string }> }
 ) {
   try {
     const params = await props.params;
     const id = params.id;
-    const contentType = request.headers.get('content-type') || '';
     
-    let text: string | null = null;
-    let type: string | null = null;
-    let location: string | null = null;
-    let timestampStr: string | null = null;
-    let files: File[] = [];
-
-    if (contentType.includes('application/json')) {
-      const body = await request.json();
-      text = body.text ?? null;
-      type = body.type ?? null;
-      location = body.location ?? null;
-      timestampStr = body.timestamp ?? null;
-    } else {
-      const formData = await request.formData();
-      text = formData.get('text') as string | null;
-      type = formData.get('type') as string | null;
-      location = formData.get('location') as string | null;
-      timestampStr = formData.get('timestamp') as string | null;
-      files = formData.getAll('media') as File[];
-    }
+    const formData = await request.formData();
+    const text = formData.get('text') as string | null;
+    const type = formData.get('type') as string | null;
+    const location = formData.get('location') as string | null;
+    const timestampStr = formData.get('timestamp') as string | null;
+    const files = formData.getAll('media') as File[];
 
     const updateData: any = {};
     if (text !== null) updateData.text = text;
@@ -67,6 +52,60 @@ export async function PUT(
       updateData.mediaType = mediaTypes[0];
       updateData.mediaS3Key = mediaS3Keys[0];
     }
+
+    const event = await prisma.timelineEvent.update({
+      where: { id: String(id) },
+      data: updateData,
+    });
+
+    const mediaItems = event.mediaUrls?.map((url: string, i: number) => ({
+      type: event.mediaTypes?.[i] || 'image',
+      url
+    })) || [];
+
+    return NextResponse.json({
+      id: event.id,
+      text: event.text,
+      type: event.type,
+      location: event.location,
+      timestamp: event.timestamp.toISOString(),
+      media: mediaItems[0],
+      mediaItems: mediaItems
+    });
+  } catch (error) {
+    console.error('Error updating timeline event:', error);
+    return NextResponse.json({ error: 'Failed to update timeline event' }, { status: 500 });
+  }
+}
+
+// PUT /api/timeline/[id] - for JSON updates
+export async function PUT(
+  request: Request,
+  props: { params: Promise<{ id: string }> }
+) {
+  try {
+    const params = await props.params;
+    const id = params.id;
+    const contentType = request.headers.get('content-type') || '';
+    
+    let text: string | null = null;
+    let type: string | null = null;
+    let location: string | null = null;
+    let timestampStr: string | null = null;
+
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      text = body.text ?? null;
+      type = body.type ?? null;
+      location = body.location ?? null;
+      timestampStr = body.timestamp ?? null;
+    }
+
+    const updateData: any = {};
+    if (text !== null) updateData.text = text;
+    if (type !== null) updateData.type = type;
+    if (location !== null) updateData.location = location;
+    if (timestampStr !== null) updateData.timestamp = new Date(timestampStr);
 
     const event = await prisma.timelineEvent.update({
       where: { id: String(id) },

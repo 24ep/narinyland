@@ -9,7 +9,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 
-// ─── S3 Client Configuration (Supabase Storage S3 Compatible) ────────
+// ─── S3 Client Configuration (t3.storageapi.dev Compatible) ────────
 
 const s3Client = new S3Client({
   region: process.env.S3_REGION || 'ap-northeast-1',
@@ -18,7 +18,7 @@ const s3Client = new S3Client({
     accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
   },
-  forcePathStyle: true, // Required for Supabase S3
+  forcePathStyle: true, // Required for t3.storageapi.dev
 });
 
 const BUCKET = process.env.S3_BUCKET || 'narinyland';
@@ -54,10 +54,8 @@ export async function uploadFile(
 
   await s3Client.send(command);
 
-  // Construct public URL (Supabase storage pattern)
-  const endpoint = process.env.S3_ENDPOINT || '';
-  const baseUrl = endpoint.replace('/s3', '');
-  const url = `${baseUrl}/object/public/${BUCKET}/${key}`;
+  // Construct public URL using API proxy for t3.storageapi.dev
+  const url = `/api/serve-image?key=${key}`;
 
   return { key, url };
 }

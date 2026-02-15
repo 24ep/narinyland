@@ -86,6 +86,7 @@ export async function GET() {
         redeemedAt: c.redeemedAt,
         points: c.points || 0,
       })),
+      gallery: (config as any).gallery || [],
     };
 
     // Cache config for 60s
