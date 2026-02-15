@@ -160,6 +160,7 @@ const TimelineSpreadsheet: React.FC<TimelineSpreadsheetProps> = ({
     <AnimatePresence>
       {isOpen && (
         <motion.div 
+          key="spreadsheet-modal"
           initial={{ opacity: 0, y: 50 }} 
           animate={{ opacity: 1, y: 0 }} 
           exit={{ opacity: 0, scale: 0.95 }}
@@ -334,32 +335,31 @@ const TimelineSpreadsheet: React.FC<TimelineSpreadsheetProps> = ({
         </motion.div>
       )}
       {/* Image Viewer Overlay */}
-      <AnimatePresence>
-        {viewingImage && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-xl flex items-center justify-center"
+      {viewingImage && (
+        <motion.div
+          key="image-viewer"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-xl flex items-center justify-center"
+          onClick={() => setViewingImage(null)}
+        >
+          <button
             onClick={() => setViewingImage(null)}
+            className="absolute top-6 right-6 w-12 h-12 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-all"
           >
-            <button
-              onClick={() => setViewingImage(null)}
-              className="absolute top-6 right-6 w-12 h-12 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-all"
-            >
-              <i className="fas fa-times text-xl"></i>
-            </button>
-            <motion.img
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              src={viewingImage}
-              className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <i className="fas fa-times text-xl"></i>
+          </button>
+          <motion.img
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            src={viewingImage}
+            className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 };

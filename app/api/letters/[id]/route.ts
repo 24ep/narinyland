@@ -28,3 +28,29 @@ export async function DELETE(
     return NextResponse.json({ error: 'Failed to delete letter' }, { status: 500 });
   }
 }
+
+// PUT /api/letters/[id]
+export async function PUT(
+  request: Request,
+  props: { params: Promise<{ id: string }> }
+) {
+  try {
+    const params = await props.params;
+    const id = params.id;
+    const body = await request.json();
+
+    const letter = await prisma.loveLetter.update({
+      where: { id },
+      data: {
+        folder: body.folder,
+        isRead: body.isRead,
+        readAt: body.readAt ? new Date(body.readAt) : undefined,
+      } as any
+    });
+
+    return NextResponse.json(letter);
+  } catch (error) {
+    console.error('Error updating letter:', error);
+    return NextResponse.json({ error: 'Failed to update letter' }, { status: 500 });
+  }
+}

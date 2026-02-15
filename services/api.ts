@@ -159,6 +159,12 @@ export const lettersAPI = {
     });
   },
 
+  update: (id: string, data: { folder?: string; isRead?: boolean; readAt?: Date }) =>
+    fetchAPI<any>(`/letters/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
   markAsRead: (id: string) =>
     fetchAPI<any>(`/letters/${id}/read`, { method: 'PUT' }),
 

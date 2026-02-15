@@ -50,8 +50,16 @@ export async function GET() {
       skyMode: config.skyMode,
       petType: config.petType,
       pets: config.pets,
-      timelineDefaultRows: config.timelineDefaultRows,
-      musicPlaylist: config.musicPlaylist || [],
+      timelineDefaultRows: (config as any).timelineDefaultRows,
+      timelineLayoutMode: (config as any).timelineLayoutMode || 'vertical',
+      timelineZoomLevel: (config as any).timelineZoomLevel || 0,
+      pwaName: (config as any).pwaName || 'Narinyland',
+      pwaShortName: (config as any).pwaShortName || 'Narinyland',
+      pwaDescription: (config as any).pwaDescription || 'Our Love Story',
+      pwaThemeColor: (config as any).pwaThemeColor || '#ec4899',
+      pwaBackgroundColor: (config as any).pwaBackgroundColor || '#ffffff',
+      pwaIconUrl: (config as any).pwaIconUrl || null,
+      musicPlaylist: (config as any).musicPlaylist || [],
       proposal: {
         questions: config.proposalQuestions,
         isAccepted: config.isProposalAccepted,
@@ -98,11 +106,17 @@ export async function PUT(request: Request) {
       mixedFlowers,
       skyMode,
       timelineDefaultRows,
+      timelineLayoutMode,
+      timelineZoomLevel,
       musicUrl,
       proposal,
       partners,
       isProposalAccepted,
       proposalProgress,
+      graphicsQuality,
+      showQRCode,
+      showCouponsOnTimeline,
+      timelineCardScale,
     } = body;
 
     const updateData: any = {};
@@ -116,11 +130,28 @@ export async function PUT(request: Request) {
     if (daysPerFlower !== undefined) updateData.daysPerFlower = daysPerFlower;
     if (flowerType !== undefined) updateData.flowerType = flowerType;
     if (mixedFlowers !== undefined) updateData.mixedFlowers = mixedFlowers;
-    if (mixedFlowers !== undefined) updateData.mixedFlowers = mixedFlowers;
     if (skyMode !== undefined) updateData.skyMode = skyMode;
     if (body.petType !== undefined) updateData.petType = body.petType;
     if (body.pets !== undefined) updateData.pets = body.pets;
     if (timelineDefaultRows !== undefined) updateData.timelineDefaultRows = timelineDefaultRows;
+    // @ts-ignore: Prisma client outdated
+    if (timelineLayoutMode !== undefined) updateData.timelineLayoutMode = timelineLayoutMode;
+    // @ts-ignore: Prisma client outdated
+    if (timelineZoomLevel !== undefined) updateData.timelineZoomLevel = timelineZoomLevel;
+    
+    // PWA Update
+    if (body.pwaName !== undefined) updateData.pwaName = body.pwaName;
+    if (body.pwaShortName !== undefined) updateData.pwaShortName = body.pwaShortName;
+    if (body.pwaDescription !== undefined) updateData.pwaDescription = body.pwaDescription;
+    if (body.pwaThemeColor !== undefined) updateData.pwaThemeColor = body.pwaThemeColor;
+    if (body.pwaBackgroundColor !== undefined) updateData.pwaBackgroundColor = body.pwaBackgroundColor;
+    if (body.pwaIconUrl !== undefined) updateData.pwaIconUrl = body.pwaIconUrl;
+    
+    if (graphicsQuality !== undefined) updateData.graphicsQuality = graphicsQuality;
+    if (showQRCode !== undefined) updateData.showQRCode = showQRCode;
+    if (showCouponsOnTimeline !== undefined) updateData.showCouponsOnTimeline = showCouponsOnTimeline;
+    if (timelineCardScale !== undefined) updateData.timelineCardScale = timelineCardScale;
+    
     if (body.musicPlaylist !== undefined) updateData.musicPlaylist = body.musicPlaylist;
     if (proposal) {
       if (proposal.questions !== undefined) updateData.proposalQuestions = proposal.questions;
@@ -181,6 +212,8 @@ export async function PUT(request: Request) {
               color: c.color,
               forPartner: c.for || c.forPartner || 'partner1',
               points: c.points || 0,
+              isRedeemed: c.isRedeemed ?? false,
+              redeemedAt: c.isRedeemed ? (c.redeemedAt || new Date()) : null
             }
           });
         } else {
@@ -193,6 +226,8 @@ export async function PUT(request: Request) {
               color: c.color,
               forPartner: c.for || c.forPartner || 'partner1',
               points: c.points || 0,
+              isRedeemed: c.isRedeemed ?? false,
+              redeemedAt: c.isRedeemed ? (c.redeemedAt || new Date()) : null,
               configId: 'default',
             }
           });
@@ -239,6 +274,55 @@ export async function PUT(request: Request) {
                caption: item.caption
              }
            });
+        }
+      }
+    }
+
+    // Sync Timeline if provided
+    if (body.timeline && Array.isArray(body.timeline)) {
+      const existingEvents = await prisma.timelineEvent.findMany({ where: { configId: 'default' } });
+      const incomingIds = new Set(body.timeline.map((t: any) => t.id).filter((id: string) => !id.startsWith('temp-')));
+      
+      // Delete removed events (only those that are in DB)
+      const toDelete = existingEvents.filter(e => !incomingIds.has(e.id));
+      for (const e of toDelete) {
+        await prisma.timelineEvent.delete({ where: { id: e.id } });
+      }
+
+      // Upsert incoming
+      for (const t of body.timeline) {
+        const timestamp = t.timestamp ? new Date(t.timestamp) : new Date();
+        const exists = existingEvents.find(ee => ee.id === t.id);
+        
+        if (exists) {
+          await prisma.timelineEvent.update({
+            where: { id: t.id },
+            data: {
+              text: t.text,
+              type: t.type,
+              location: t.location,
+              timestamp,
+              mediaUrl: t.media?.url,
+              mediaType: t.media?.type,
+              mediaUrls: t.mediaItems?.map((m: any) => m.url) || [],
+              mediaTypes: t.mediaItems?.map((m: any) => m.type) || [],
+            }
+          });
+        } else if (!t.id.toString().startsWith('temp-')) {
+          await prisma.timelineEvent.create({
+            data: {
+               id: t.id,
+               text: t.text,
+               type: t.type,
+               location: t.location,
+               timestamp,
+               mediaUrl: t.media?.url,
+               mediaType: t.media?.type,
+               mediaUrls: t.mediaItems?.map((m: any) => m.url) || [],
+               mediaTypes: t.mediaItems?.map((m: any) => m.type) || [],
+               configId: 'default'
+            }
+          });
         }
       }
     }

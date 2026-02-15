@@ -140,7 +140,7 @@ const CouponCard: React.FC<{
             <h3 className="font-black text-gray-800 text-base md:text-xl tracking-tight leading-none drop-shadow-sm">{coupon.title}</h3>
             {coupon.points && coupon.points > 0 && (
                <div className="bg-yellow-400 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-sm">
-                 +{coupon.points} PTS
+                 +{coupon.points?.toLocaleString()} PTS
                </div>
             )}
           </div>
@@ -377,7 +377,7 @@ const LoveCoupons: React.FC<LoveCouponsProps> = ({ coupons, partners, onRedeem, 
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-sm bg-white rounded-[2rem] shadow-2xl overflow-hidden border-4 border-white"
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden border-4 border-white"
             >
               {/* Top Section / Gradient Header */}
               <div className={`h-32 bg-gradient-to-br ${selectedCoupon.color} relative flex items-center justify-center`}>
@@ -398,7 +398,7 @@ const LoveCoupons: React.FC<LoveCouponsProps> = ({ coupons, partners, onRedeem, 
                      </span>
                      {selectedCoupon.points && selectedCoupon.points > 0 && (
                         <span className="bg-yellow-100 text-yellow-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">
-                          +{selectedCoupon.points} Points
+                          +{selectedCoupon.points?.toLocaleString()} Points
                         </span>
                      )}
                    </div>
@@ -483,7 +483,7 @@ const LoveCoupons: React.FC<LoveCouponsProps> = ({ coupons, partners, onRedeem, 
                initial={{ opacity: 0, y: 50 }}
                animate={{ opacity: 1, y: 0 }}
                exit={{ opacity: 0, y: 50 }}
-               className="relative w-full max-w-sm bg-white rounded-[2rem] shadow-2xl p-8 overflow-hidden"
+               className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 overflow-hidden"
             >
                <h3 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-2">
                  <i className="fas fa-magic text-pink-500"></i> Create Coupon

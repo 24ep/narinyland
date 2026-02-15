@@ -29,6 +29,7 @@ const Home: React.FC = () => {
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
   const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
   const [isMobileStatsOpen, setIsMobileStatsOpen] = useState(false);
+  const [isStatsGuideOpen, setIsStatsGuideOpen] = useState(false);
   const [isVolumeModalOpen, setIsVolumeModalOpen] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.5);
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
@@ -157,9 +158,11 @@ const Home: React.FC = () => {
           id: l.id,
           fromId: l.fromId === serverConfig.partners?.partner1?.partnerId ? 'partner1' : 'partner2', // Simplified assumption, logic might need adjustment if schema differs
           content: l.content,
+          folder: l.folder,
           timestamp: new Date(l.createdAt),
           unlockDate: new Date(l.unlockDate),
           isRead: l.isRead,
+          readAt: l.readAt ? new Date(l.readAt) : undefined,
           media: l.mediaUrl ? { type: l.mediaType, url: l.mediaUrl } : undefined
         })));
 
@@ -463,7 +466,22 @@ const Home: React.FC = () => {
     }
   };
 
-    const handleUpdateTimeline = async (updated: Interaction) => {
+    const handleUpdateMessage = async (msg: LoveLetterMessage) => {
+    try {
+      await lettersAPI.update(msg.id, {
+        folder: msg.folder,
+        isRead: msg.isRead,
+        readAt: msg.readAt
+      });
+      // Optimistic update
+      setLoveLetters(prev => prev.map(m => m.id === msg.id ? msg : m));
+    } catch (err: any) {
+        console.error("Failed to update message", err);
+        alert(err.message || 'Failed to update message');
+    }
+  };
+
+  const handleUpdateTimeline = async (updated: Interaction) => {
       try {
         const files: File[] = [];
         if (updated.mediaItems) {
@@ -598,11 +616,19 @@ const Home: React.FC = () => {
     return interactions;
   }, [appConfig.timeline, appConfig.coupons, appConfig.showCouponsOnTimeline]);
 
+  const handleTimelineConfigUpdate = (updates: { layoutMode?: 'vertical' | 'wave' | 'snake', zoomLevel?: number }) => {
+    handleSetAppConfig(prev => ({
+      ...prev,
+      timelineLayoutMode: updates.layoutMode || prev.timelineLayoutMode,
+      timelineZoomLevel: updates.zoomLevel !== undefined ? updates.zoomLevel : prev.timelineZoomLevel
+    }));
+  };
+
   const daysTogether = Math.max(0, Math.floor((new Date().getTime() - new Date(appConfig.anniversaryDate).getTime()) / (1000 * 60 * 60 * 24)));
   const flowerCount = Math.floor(daysTogether / appConfig.daysPerFlower);
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center p-6 relative overflow-x-hidden">
+    <div className="min-h-screen w-full flex flex-col items-center p-2 md:p-6 relative overflow-x-hidden">
         {/* Fullscreen Background & Tree */}
         <div className="fixed inset-0 z-0">
            <LoveTree 
@@ -685,6 +711,11 @@ const Home: React.FC = () => {
                     onAddInteraction={handleAddTimeline}
                     onOpenSpreadsheet={() => setIsSpreadsheetOpen(true)}
                     cardScale={appConfig.timelineCardScale}
+                    layoutMode={appConfig.timelineLayoutMode}
+                    zoomLevel={appConfig.timelineZoomLevel}
+                    thumbnailHeight={appConfig.timelineThumbnailHeight}
+                    onOpenSettings={() => setIsEditDrawerOpen(true)}
+                    onUpdateConfig={handleTimelineConfigUpdate}
                  />
                 </motion.div>
              )}
@@ -713,7 +744,7 @@ const Home: React.FC = () => {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.3 }}
-                  className="w-full h-full flex justify-center pt-20 px-4"
+                  className="w-full h-[calc(100vh-180px)] flex justify-center pt-10 md:pt-20 px-0 md:px-4"
                 >
                   <LoveLetter 
                     isOpen={true} 
@@ -829,12 +860,8 @@ const Home: React.FC = () => {
           {/* CENTERED STATUS BAR - HOME ONLY */}
           {activeTab === 'home' && (
             <div 
-              className="fixed top-24 md:top-8 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col items-center pointer-events-auto cursor-pointer md:cursor-default"
-              onClick={() => {
-                if (window.innerWidth < 768) {
-                  setIsMobileStatsOpen(true);
-                }
-              }}
+              className="fixed top-24 md:top-8 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col items-center pointer-events-auto cursor-pointer"
+              onClick={() => setIsStatsGuideOpen(true)}
             >
               <motion.div 
                 initial={{ opacity: 0, y: -20 }}
@@ -861,7 +888,7 @@ const Home: React.FC = () => {
                           <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Flowers</span>
                        </div>
                        <div className="flex flex-col items-center">
-                          <span className="text-xs md:text-2xl font-bold text-white drop-shadow-[0_2px_4_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-sm md:text-2xl">🍃</span> {loveStats.leaves}</span>
+                          <span className="text-xs md:text-2xl font-bold text-white drop-shadow-[0_2px_4_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-sm md:text-2xl">🍃</span> {loveStats.leaves?.toLocaleString()}</span>
                           <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Leaves</span>
                        </div>
                        <div className="flex flex-col items-center">
@@ -869,7 +896,7 @@ const Home: React.FC = () => {
                           <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Level</span>
                        </div>
                        <div className="flex flex-col items-center">
-                          <span className="text-xs md:text-2xl font-bold text-amber-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-[10px] md:text-base">🪙</span> {loveStats.points}</span>
+                          <span className="text-xs md:text-2xl font-bold text-amber-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] flex items-center gap-1 md:gap-1.5"><span className="text-[10px] md:text-base">🪙</span> {loveStats.points?.toLocaleString()}</span>
                           <span className="text-[6px] md:text-[8px] font-black text-white/50 uppercase tracking-tighter">Points</span>
                        </div>
                     </div>
@@ -880,7 +907,7 @@ const Home: React.FC = () => {
               <div className="w-24 md:w-96 h-0.5 md:h-1 bg-white/10 rounded-full overflow-hidden mt-0.5 md:mt-1 border border-white/5 isolate relative">
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${(loveStats.xp % 100)}%` }}
+                    animate={{ width: `${Math.min(100, (loveStats.xp / (loveStats.level * 100)) * 100)}%` }}
                     className="h-full bg-gradient-to-r from-pink-500 via-rose-400 to-yellow-400 shadow-[0_0_8px_rgba(244,114,182,0.5)]"
                   />
                   
@@ -931,76 +958,136 @@ const Home: React.FC = () => {
 
            </div>
 
-          {/* Mobile Garden Status Drawer */}
+          {/* STATS GUIDE MODAL/DRAWER */}
           <AnimatePresence>
-            {isMobileStatsOpen && (
+            {isStatsGuideOpen && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end md:hidden"
-                onClick={() => setIsMobileStatsOpen(false)}
+                className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-6"
+                onClick={() => setIsStatsGuideOpen(false)}
               >
                 <motion.div
-                  initial={{ y: "100%" }}
-                  animate={{ y: 0 }}
-                  exit={{ y: "100%" }}
+                  initial={isMobile ? { y: "100%" } : { scale: 0.9, opacity: 0, y: 20 }}
+                  animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1, y: 0 }}
+                  exit={isMobile ? { y: "100%" } : { scale: 0.9, opacity: 0, y: 20 }}
                   transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                  className="bg-white w-full rounded-t-3xl p-6 pb-12 space-y-6"
+                  className={`bg-white w-full max-w-2xl overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.3)] flex flex-col ${
+                    isMobile ? 'rounded-t-[3rem] max-h-[90vh]' : 'rounded-[3rem] max-h-[85vh]'
+                  }`}
                   onClick={e => e.stopPropagation()}
                 >
-                  <div className="flex justify-center mb-2">
-                    <div className="w-12 h-1.5 bg-gray-200 rounded-full"></div>
-                  </div>
+                  {/* Handle for mobile */}
+                  {isMobile && (
+                    <div className="flex justify-center pt-4 pb-2 shrink-0">
+                      <div className="w-12 h-1.5 bg-gray-200 rounded-full"></div>
+                    </div>
+                  )}
 
-                  <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                     <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-gradient-to-br from-yellow-300 to-amber-400 rounded-full flex items-center justify-center text-2xl font-black text-white shadow-lg border-4 border-white">
-                          {loveStats.level}
+                  <div className="overflow-y-auto custom-scrollbar p-6 md:p-10">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-8">
+                       <div className="flex items-center gap-5">
+                          <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 rounded-3xl flex items-center justify-center text-3xl font-black text-white shadow-xl border-4 border-white rotate-3">
+                            {loveStats.level}
+                          </div>
+                          <div>
+                             <h3 className="font-pacifico text-3xl md:text-4xl text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-rose-600">Garden Guide</h3>
+                             <p className="text-[10px] md:text-xs font-black text-gray-400 uppercase tracking-[0.2em]">World Status & Progress</p>
+                          </div>
+                       </div>
+                       <button onClick={() => setIsStatsGuideOpen(false)} className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all">
+                          <i className="fas fa-times text-xl"></i>
+                       </button>
+                    </div>
+
+                    {/* XP Progress */}
+                    <div className="bg-pink-50/30 rounded-[2rem] p-6 md:p-8 border border-pink-100 mb-8 overflow-hidden relative group">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 scale-150 rotate-12 transition-transform group-hover:scale-[1.7]">
+                           <i className="fas fa-chart-line text-pink-500 text-6xl"></i>
                         </div>
-                        <div>
-                           <h3 className="font-pacifico text-2xl text-gray-800">Garden Status</h3>
-                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{loveStats.xp} / {loveStats.level * 100} XP</p>
+                        <div className="flex justify-between items-end mb-4 relative z-10">
+                           <div>
+                              <span className="text-[10px] font-black text-pink-500 uppercase tracking-widest block mb-1">Experience Points</span>
+                              <div className="flex items-baseline gap-2">
+                                 <span className="text-4xl font-black text-gray-800">{loveStats.xp}</span>
+                                 <span className="text-sm font-bold text-gray-400">/ {loveStats.level * 100} XP</span>
+                              </div>
+                           </div>
+                           <div className="text-right">
+                              <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest block mb-1">World Level</span>
+                              <span className="text-xl font-black text-amber-600">Level {loveStats.level}</span>
+                           </div>
                         </div>
-                     </div>
-                     <button onClick={() => setIsEditDrawerOpen(true)} className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100">
-                        <i className="fas fa-cog"></i>
-                     </button>
-                  </div>
+                        <div className="w-full h-4 bg-white/50 rounded-full overflow-hidden border border-pink-100 relative shadow-inner p-1">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${Math.min(100, (loveStats.xp / (loveStats.level * 100)) * 100)}%` }}
+                              className="h-full bg-gradient-to-r from-pink-400 via-rose-500 to-yellow-400 rounded-full relative"
+                            >
+                               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>
+                            </motion.div>
+                        </div>
+                    </div>
 
-                  {/* Mobile XP Bar */}
-                  <div className="w-full h-4 bg-pink-50 rounded-full overflow-hidden border border-pink-100 relative shadow-inner">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(100, loveStats.xp)}%` }}
-                        className="h-full bg-gradient-to-r from-pink-400 via-rose-400 to-yellow-400 relative"
-                      />
-                  </div>
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-2 gap-4 md:gap-6 mb-10">
+                       <div className="bg-gradient-to-br from-pink-50 to-rose-50 p-6 rounded-[2rem] border border-pink-100/50 flex flex-col items-center text-center gap-2 hover:shadow-lg transition-all group">
+                          <span className="text-4xl group-hover:scale-125 transition-transform">🌸</span>
+                          <span className="font-black text-gray-800 text-2xl drop-shadow-sm">{flowerCount}</span>
+                          <span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">Flowers Bloomed</span>
+                       </div>
+                       <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-[2rem] border border-green-100/50 flex flex-col items-center text-center gap-2 hover:shadow-lg transition-all group">
+                          <span className="text-4xl group-hover:scale-125 transition-transform">🍃</span>
+                          <span className="font-black text-gray-800 text-2xl drop-shadow-sm">{loveStats.leaves?.toLocaleString()}</span>
+                          <span className="text-[10px] font-black text-green-600 uppercase tracking-widest">Leaves Grown</span>
+                       </div>
+                    </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                     <div className="bg-pink-50/50 p-4 rounded-2xl border border-pink-100 flex flex-col items-center text-center gap-1">
-                        <span className="text-2xl">🌸</span>
-                        <span className="font-black text-gray-800 text-lg">{flowerCount}</span>
-                        <span className="text-[9px] font-bold text-pink-400 uppercase tracking-widest">Flowers Bloomed</span>
-                     </div>
-                     <div className="bg-green-50/50 p-4 rounded-2xl border border-green-100 flex flex-col items-center text-center gap-1">
-                        <span className="text-2xl">🍃</span>
-                        <span className="font-black text-gray-800 text-lg">{loveStats.leaves}</span>
-                        <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Leaves Grown</span>
-                     </div>
-                  </div>
+                    {/* Guide Section */}
+                    <div className="space-y-6">
+                       <h4 className="font-pacifico text-2xl text-gray-800 border-b border-gray-100 pb-4">How to grow our garden?</h4>
+                       
+                       <div className="space-y-4">
+                          <div className="flex gap-4 items-start bg-gray-50/50 p-4 rounded-3xl hover:bg-white hover:shadow-sm transition-all border border-transparent hover:border-gray-100">
+                             <div className="w-12 h-12 shrink-0 bg-pink-100 rounded-2xl flex items-center justify-center text-2xl">🌸</div>
+                             <div>
+                                <h5 className="font-black text-gray-800 text-sm">Automated Blooms</h5>
+                                <p className="text-xs text-gray-500 font-medium leading-relaxed">A new flower blooms every <span className="text-pink-500 font-black">{appConfig.daysPerFlower} days</span> automatically to celebrate our journey together.</p>
+                             </div>
+                          </div>
 
-                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3">
-                      <div className="flex justify-between items-center text-xs font-bold text-gray-600">
-                         <span>Relationship Length</span>
-                         <span className="font-black">{daysTogether} Days</span>
-                      </div>
-                      <div className="w-full h-px bg-gray-200"></div>
-                      <div className="flex justify-between items-center text-xs font-bold text-gray-600">
-                         <span>Next Flower In</span>
-                         <span className="font-black text-pink-500">{appConfig.daysPerFlower - (daysTogether % appConfig.daysPerFlower)} Days</span>
-                      </div>
-                   </div>
+                          <div className="flex gap-4 items-start bg-gray-50/50 p-4 rounded-3xl hover:bg-white hover:shadow-sm transition-all border border-transparent hover:border-gray-100">
+                             <div className="w-12 h-12 shrink-0 bg-green-100 rounded-2xl flex items-center justify-center text-2xl">🍃</div>
+                             <div>
+                                <h5 className="font-black text-gray-800 text-sm">Manual Growth</h5>
+                                <p className="text-xs text-gray-500 font-medium leading-relaxed">You can manually grow a leaf by spending <span className="text-green-600 font-black">100 points</span>. Use the button on the right of the home screen!</p>
+                             </div>
+                          </div>
+
+                          <div className="flex gap-4 items-start bg-gray-50/50 p-4 rounded-3xl hover:bg-white hover:shadow-sm transition-all border border-transparent hover:border-gray-100">
+                             <div className="w-12 h-12 shrink-0 bg-purple-100 rounded-2xl flex items-center justify-center text-2xl">⭐</div>
+                             <div>
+                                <h5 className="font-black text-gray-800 text-sm">Earning Points & XP</h5>
+                                <p className="text-xs text-gray-500 font-medium leading-relaxed">Every milestone, memory, or letter shared adds <span className="text-purple-600 font-black">Points and XP</span> to our joint account.</p>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Footer Stats Info */}
+                    <div className="mt-10 pt-6 border-t border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div className="flex items-center gap-3">
+                           <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></div>
+                           <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Relationship Length: {daysTogether} Days</span>
+                        </div>
+                        <div className="flex items-center gap-2 bg-pink-50/50 px-4 py-2 rounded-full border border-pink-100">
+                           <i className="fas fa-clock text-pink-400 text-[10px]"></i>
+                           <span className="text-[10px] font-black text-pink-600 uppercase tracking-widest">Next Flower: {appConfig.daysPerFlower - (daysTogether % appConfig.daysPerFlower)} Days</span>
+                        </div>
+                    </div>
+                  </div>
                 </motion.div>
               </motion.div>
             )}
@@ -1011,7 +1098,9 @@ const Home: React.FC = () => {
             onClose={() => setIsLetterOpen(false)} 
             messages={loveLetters}
             onSendMessage={handleSendMessage}
+            onUpdateMessage={handleUpdateMessage}
             partners={appConfig.partners}
+            folders={appConfig.mailFolders}
           />
 
           <EditDrawer 

@@ -24,8 +24,25 @@ model AppConfig {
   skyMode         String   @default("follow_timezone") // "follow_timezone" | "noon" | "night"
   petType         String   @default("cat")
   pets            Json     @default("[]")
-  timelineDefaultRows Int  @default(5)
+  graphicsQuality String   @default("medium") // "low" | "medium" | "high"
+  showQRCode      Boolean  @default(false)
+  showCouponsOnTimeline Boolean @default(true)
+  timelineCardScale Float  @default(1.0)
+  timelineDefaultRows Int      @default(5)
+  timelineLayoutMode  String   @default("vertical")
+  timelineZoomLevel   Int      @default(0)
+  timelineThumbnailHeight Int @default(150)
+  
+  // PWA Settings
+  pwaName             String   @default("Narinyland")
+  pwaShortName        String   @default("Narinyland")
+  pwaDescription      String   @default("Our Love Story")
+  pwaThemeColor       String   @default("#ec4899") // pink-500
+  pwaBackgroundColor  String   @default("#ffffff")
+  pwaIconUrl          String?
+  
   musicPlaylist   String[] @default(["https://www.youtube.com/watch?v=5qap5aO4i9A"])
+  mailFolders     String[] @default(["Inbox", "Archive", "Trash"])
   proposalQuestions String[] @default(["Will you be my Valentine?", "Jaroonwit is so handsome, right?"])
   isProposalAccepted Boolean  @default(false)
   proposalProgress   Int      @default(0)
@@ -33,6 +50,7 @@ model AppConfig {
   updatedAt       DateTime @updatedAt
   partners Partner[]
   coupons  Coupon[]
+  timeline TimelineEvent[]
 }
 
 model Partner {
@@ -71,6 +89,8 @@ model TimelineEvent {
   mediaUrls   String[] @default([])
   mediaTypes  String[] @default([])
   mediaS3Keys String[] @default([])
+  config      AppConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId    String    @default("default")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -80,8 +100,10 @@ model LoveLetter {
   content    String
   from       Partner  @relation("SentLetters", fields: [fromId], references: [id], onDelete: Cascade)
   fromId     String
+  folder     String   @default("Inbox")
   unlockDate DateTime
   isRead     Boolean  @default(false)
+  readAt     DateTime?
   mediaType  String?  
   mediaUrl   String?
   mediaS3Key String?

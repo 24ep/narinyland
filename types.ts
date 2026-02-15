@@ -43,15 +43,18 @@ export interface LoveLetterMessage {
   id: string;
   fromId: 'partner1' | 'partner2';
   content: string;
+  folder?: string;
   timestamp: Date;
   unlockDate: Date;
   isRead: boolean;
+  readAt?: Date;
   media?: MediaContent;
   mediaItems?: MediaContent[];
 }
 export interface AppConfig {
   appName: string;
   musicPlaylist?: string[];
+  mailFolders?: string[];
   anniversaryDate: string;
   treeStyle: string;
   viewMode?: "2d" | "3d";
@@ -70,6 +73,15 @@ export interface AppConfig {
   showCouponsOnTimeline?: boolean;
   timelineCardScale?: number;
   timelineDefaultRows: number;
+  timelineZoomLevel?: number;
+  timelineLayoutMode?: 'wave' | 'snake' | 'vertical';
+  timelineThumbnailHeight?: number;
+  pwaName?: string;
+  pwaShortName?: string;
+  pwaDescription?: string;
+  pwaThemeColor?: string;
+  pwaBackgroundColor?: string;
+  pwaIconUrl?: string;
   proposal: {
     questions: string[];
     progress?: number;

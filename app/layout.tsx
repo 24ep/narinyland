@@ -1,10 +1,47 @@
-import type { Metadata } from 'next';
+import { Metadata, Viewport } from 'next';
+import prisma from '@/lib/prisma';
 import './globals.css';
 
-export const metadata: Metadata = {
-  title: 'Narinyland Pet - Interactive Love & Growth Garden',
-  description: 'Experience Narinyland, an interactive virtual pet and love garden. Track your relationship growth, collect memories, and nurture your digital bond.',
-};
+// Helper to get config
+async function getConfig() {
+  try {
+    return await prisma.appConfig.findUnique({ where: { id: 'default' } });
+  } catch (e) {
+    console.error("Layout Config Error", e);
+    return null;
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const config = await getConfig();
+  
+  return {
+    title: (config as any)?.pwaName || 'Narinyland',
+    description: (config as any)?.pwaDescription || 'Experience Narinyland, an interactive virtual pet and love garden. Track your relationship growth, collect memories, and nurture your digital bond.',
+    applicationName: (config as any)?.pwaShortName || 'Narinyland',
+    appleWebApp: {
+      capable: true,
+      title: (config as any)?.pwaShortName || 'Narinyland',
+      statusBarStyle: 'black-translucent',
+    },
+    icons: {
+        icon: (config as any)?.pwaIconUrl || undefined,
+        apple: (config as any)?.pwaIconUrl || undefined,
+    }
+    // Manifest is automatically handled by app/manifest.ts presence
+  };
+}
+
+export async function generateViewport(): Promise<Viewport> {
+   const config = await getConfig();
+   return {
+     themeColor: (config as any)?.pwaThemeColor || '#ec4899',
+     width: 'device-width',
+     initialScale: 1,
+     maximumScale: 1,
+     userScalable: false,
+   }
+}
 
 export default function RootLayout({
   children,

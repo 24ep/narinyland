@@ -17,12 +17,24 @@ interface LoveLetterProps {
   onClose: () => void;
   messages: LoveLetterMessage[];
   onSendMessage: (msg: LoveLetterMessage) => void;
+  onUpdateMessage?: (msg: LoveLetterMessage) => void;
   partners: Partners;
   isInline?: boolean;
+  folders?: string[];
 }
 
-const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSendMessage, partners, isInline = false }) => {
+const LoveLetter: React.FC<LoveLetterProps> = ({ 
+  isOpen, 
+  onClose, 
+  messages, 
+  onSendMessage, 
+  onUpdateMessage,
+  partners, 
+  isInline = false,
+  folders = ['Inbox', 'Sent', 'Archive', 'Trash']
+}) => {
   const [view, setView] = useState<'list' | 'compose' | 'read'>('list');
+  const [currentFolder, setCurrentFolder] = useState('Inbox');
   const [selectedMessage, setSelectedMessage] = useState<LoveLetterMessage | null>(null);
   
   // Compose State
@@ -127,7 +139,7 @@ const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSe
       animate={{ x: 0, y: 0, opacity: 1 }}
       exit={isInline ? { opacity: 0, y: 20 } : { x: "100%", y: "100%" }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
-      className={`${isInline ? 'w-full h-full max-w-2xl mx-auto rounded-3xl' : 'bg-white w-full md:w-[450px] h-[85vh] md:h-full rounded-t-3xl md:rounded-l-3xl md:rounded-tr-none shadow-2xl'} overflow-hidden flex flex-col relative bg-white`}
+      className={`${isInline ? 'w-full h-full max-w-4xl mx-auto rounded-3xl shadow-xl' : 'bg-white w-full md:w-[450px] h-[100dvh] md:h-full rounded-t-3xl md:rounded-l-3xl md:rounded-tr-none shadow-2xl'} overflow-hidden flex flex-col relative bg-white`}
       onClick={e => e.stopPropagation()}
     >
             {/* Header */}
@@ -160,61 +172,105 @@ const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSe
 
             {/* --- LIST VIEW --- */}
             {view === 'list' && (
-              <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 space-y-3">
-                {messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                    <div className="text-6xl mb-4">📭</div>
-                    <p className="font-bold">The mailbox is empty...</p>
-                    <p className="text-xs">Why not write a surprise note?</p>
-                  </div>
-                ) : (
-                  [...messages].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map(msg => {
-                    const isLocked = new Date(msg.unlockDate) > new Date();
-                    return (
-                      <motion.div
-                        key={msg.id}
-                        layout
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        onClick={() => handleOpenMessage(msg)}
-                        className={`bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer transition-all ${isLocked ? 'opacity-75' : 'hover:shadow-md hover:border-pink-100'}`}
-                      >
-                         <div className="relative shrink-0">
-                           <div className="w-14 h-14 bg-pink-100 rounded-full flex items-center justify-center text-3xl shadow-inner">
-                             {getPartnerAvatar(msg.fromId)}
-                           </div>
-                           {/* Small Media Thumbnail if unlocked and image exists */}
-                           {!isLocked && msg.media?.type === 'image' && (
-                              <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full border-2 border-white overflow-hidden shadow-sm">
-                                <img src={msg.media.url} className="w-full h-full object-cover" />
+              <div className="flex flex-col md:flex-row h-full">
+                 {/* Folders Sidebar */}
+                 <div className="w-full md:w-32 bg-gray-50 border-r border-gray-100 p-2 md:p-4 flex md:flex-col gap-2 overflow-x-auto md:overflow-visible shrink-0 items-center md:items-stretch h-14 md:h-full no-scrollbar">
+                    {folders.map(f => (
+                       <button 
+                         key={f}
+                         onClick={() => setCurrentFolder(f)}
+                         className={`px-3 py-2 rounded-xl text-xs font-bold capitalize transition-all whitespace-nowrap flex items-center gap-2 ${currentFolder === f ? 'bg-pink-100 text-pink-600 shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                       >
+                         <i className={`fas fa-${f === 'Inbox' ? 'inbox' : f === 'Sent' ? 'paper-plane' : f === 'Archive' ? 'archive' : f === 'Trash' ? 'trash' : 'folder'}`}></i>
+                         {f}
+                       </button>
+                    ))}
+                    {/* Folder Count */}
+                    <div className="hidden md:block mt-auto pt-4 border-t border-gray-100">
+                       <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest text-center">
+                          {messages.filter(m => (m.folder || 'Inbox') === currentFolder).length} items
+                       </p>
+                    </div>
+                 </div>
+
+                 {/* Messages List */}
+                 <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 space-y-3 relative">
+                   {messages.filter(m => (m.folder || 'Inbox') === currentFolder).length === 0 ? (
+                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                       <div className="text-6xl mb-4 text-gray-200"><i className={`fas fa-${currentFolder === 'Inbox' ? 'inbox' : 'folder-open'}`}></i></div>
+                       <p className="font-bold text-sm">No letters in {currentFolder}</p>
+                       <p className="text-[10px] uppercase tracking-widest mt-1">Check back later or write one!</p>
+                     </div>
+                   ) : (
+                     [...messages]
+                       .filter(m => (m.folder || 'Inbox') === currentFolder)
+                       .sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                       .map(msg => {
+                       const isLocked = new Date(msg.unlockDate) > new Date();
+                       const isUnread = !msg.isRead && !isLocked && msg.folder !== 'Sent'; // Sent messages are always "read" implicitly?
+                       return (
+                         <motion.div
+                           key={msg.id}
+                           layout
+                           initial={{ opacity: 0, scale: 0.95 }}
+                           animate={{ opacity: 1, scale: 1 }}
+                           onClick={() => {
+                              if (isLocked) {
+                                 alert(`This letter is locked until ${new Date(msg.unlockDate).toLocaleString()}! 🔒`);
+                                 return;
+                              }
+                              if (!msg.isRead && onUpdateMessage) {
+                                 onUpdateMessage({ ...msg, isRead: true, readAt: new Date() });
+                              }
+                              setSelectedMessage(msg);
+                              setView('read');
+                           }}
+                           className={`bg-white p-4 rounded-2xl shadow-sm border ${isUnread ? 'border-pink-300 shadow-md bg-pink-50/30' : 'border-gray-100'} flex items-center gap-4 cursor-pointer transition-all hover:shadow-md hover:border-pink-200 group relative`}
+                         >
+                            {isUnread && <div className="absolute top-2 right-2 w-2 h-2 bg-pink-500 rounded-full animate-pulse shadow-sm"></div>}
+                            
+                            <div className="relative shrink-0">
+                              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow-inner transition-colors ${isUnread ? 'bg-pink-100 text-pink-500' : 'bg-gray-100 text-gray-400'}`}>
+                                {getPartnerAvatar(msg.fromId)}
                               </div>
-                           )}
-                         </div>
-                         <div className="flex-1 min-w-0">
-                           <h4 className="font-bold text-gray-800 text-sm truncate">From {getPartnerName(msg.fromId)}</h4>
-                           <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                             {msg.media && <i className={`fas ${msg.media.type === 'image' ? 'fa-image' : msg.media.type === 'video' ? 'fa-video' : 'fa-microphone'} text-pink-400`}></i>}
-                             <span className="truncate italic">
-                               {isLocked ? `Locked until ${new Date(msg.unlockDate).toLocaleDateString()}` : (msg.content || 'Attached a memory...')}
-                             </span>
-                           </div>
-                         </div>
-                         <div className="text-2xl filter drop-shadow-sm">
-                           {isLocked ? '🔒' : '💌'}
-                         </div>
-                      </motion.div>
-                    );
-                  })
-                )}
-                
-                <motion.button
-                  whileHover={{ scale: 1.1, rotate: 5 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setView('compose')}
-                  className="absolute bottom-8 right-8 w-16 h-16 bg-pink-500 text-white rounded-full shadow-xl flex items-center justify-center text-3xl z-30"
-                >
-                  <i className="fas fa-pen-fancy"></i>
-                </motion.button>
+                              {/* Media Indicator */}
+                              {!isLocked && msg.media && (
+                                 <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white rounded-full shadow-sm flex items-center justify-center border border-gray-100 text-[10px]">
+                                    <i className={`fas ${msg.media.type === 'image' ? 'fa-image text-blue-400' : msg.media.type === 'video' ? 'fa-video text-purple-400' : 'fa-microphone text-orange-400'}`}></i>
+                                 </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center mb-0.5">
+                                 <h4 className={`text-xs font-bold truncate ${isUnread ? 'text-pink-600' : 'text-gray-700'}`}>
+                                    {getPartnerName(msg.fromId)} 
+                                    <span className="font-normal text-gray-400 ml-1/2">• {new Date(msg.timestamp).toLocaleDateString()}</span>
+                                 </h4>
+                                 {msg.readAt && <i className="fas fa-check-double text-[8px] text-blue-400 ml-1" title={`Read: ${new Date(msg.readAt).toLocaleString()}`}></i>}
+                              </div>
+                              <p className={`text-[11px] truncate ${isUnread ? 'font-bold text-gray-800' : 'text-gray-500 italic'}`}>
+                                {isLocked ? `Locked until ${new Date(msg.unlockDate).toLocaleDateString()}` : (msg.content || 'Attached a memory...')}
+                              </p>
+                            </div>
+                            
+                            <div className="text-xl filter drop-shadow-sm opacity-50 group-hover:opacity-100 transition-opacity">
+                              {isLocked ? '🔒' : '💌'}
+                            </div>
+                         </motion.div>
+                       );
+                     })
+                   )}
+                   
+                   <motion.button
+                     whileHover={{ scale: 1.1, rotate: 5 }}
+                     whileTap={{ scale: 0.9 }}
+                     onClick={() => setView('compose')}
+                     className="absolute bottom-6 right-6 w-14 h-14 bg-pink-500 text-white rounded-full shadow-xl flex items-center justify-center text-2xl z-30 hover:bg-pink-600 transition-colors"
+                   >
+                     <i className="fas fa-pen-fancy"></i>
+                   </motion.button>
+                 </div>
               </div>
             )}
 
@@ -344,7 +400,7 @@ const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSe
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-end items-end md:items-stretch"
+          className="fixed inset-0 z-[100] bg-pink-900/10 md:bg-black/40 backdrop-blur-md flex justify-end items-end md:items-stretch"
           onClick={onClose}
         >
           {MainContent}
@@ -354,7 +410,7 @@ const LoveLetter: React.FC<LoveLetterProps> = ({ isOpen, onClose, messages, onSe
   );
 };
 
-const ReadAnimation: React.FC<{ message: LoveLetterMessage; onClose: () => void }> = ({ message, onClose }) => {
+const ReadAnimation: React.FC<{ message: LoveLetterMessage; onClose: () => void; onUpdateMessage?: (msg: LoveLetterMessage) => void }> = ({ message, onClose, onUpdateMessage }) => {
   const [stage, setStage] = useState<'closed' | 'opening' | 'reading'>('closed');
 
   useEffect(() => {
@@ -397,9 +453,12 @@ const ReadAnimation: React.FC<{ message: LoveLetterMessage; onClose: () => void 
                     rotate: stage === 'reading' ? 0 : (Math.random() - 0.5) * 5
                 }}
                 transition={{ duration: 1, delay: 0.2, type: "spring", bounce: 0.4 }}
-                className="absolute top-2 w-[92%] h-[92%] bg-[#fffbf0] shadow-xl rounded-sm p-5 flex flex-col items-center cursor-default border border-[#e8dfc8]"
+                className="absolute top-2 w-[92%] h-[92%] bg-[#fffbf0] shadow-xl rounded-sm p-5 flex flex-col items-center cursor-default border border-[#e8dfc8] isolate"
                 onClick={(e) => e.stopPropagation()} 
             >
+                {/* Paper Texture Overlay */}
+                <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-multiply bg-[url('https://www.transparenttextures.com/patterns/handmade-paper.png')]"></div>
+
                 <AnimatePresence>
                   {stage === 'reading' && (
                     <motion.div 
@@ -463,10 +522,14 @@ const ReadAnimation: React.FC<{ message: LoveLetterMessage; onClose: () => void 
                 transition={{ duration: 0.6, ease: "easeInOut" }}
                 style={{ 
                     transformOrigin: "top",
-                    clipPath: 'polygon(0 0, 50% 60%, 100% 0)' 
+                    clipPath: 'polygon(0 0, 50% 64%, 100% 0)' 
                 }}
-                className="absolute top-0 w-full h-full bg-pink-600 z-30 shadow-lg"
-            />
+                className="absolute top-0 w-full h-full bg-pink-600 z-30 shadow-lg flex justify-center items-center"
+            >
+                <div className="absolute top-[28%] w-10 h-10 bg-rose-700/80 rounded-full shadow-[0_4px_10px_rgba(0,0,0,0.3)] flex items-center justify-center border-2 border-rose-800 rotate-12 ring-2 ring-rose-500/20">
+                   <div className="text-white text-lg filter drop-shadow-md">🌹</div>
+                </div>
+            </motion.div>
         </motion.div>
 
         {/* Action Buttons */}
@@ -484,6 +547,18 @@ const ReadAnimation: React.FC<{ message: LoveLetterMessage; onClose: () => void 
                 >
                     Keep it safe 🔒
                 </button>
+                {onUpdateMessage && message.folder !== 'Archive' && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdateMessage({ ...message, folder: 'Archive' });
+                            onClose();
+                        }}
+                        className="bg-gray-100 text-gray-500 px-6 py-3 rounded-full font-black shadow-md hover:bg-gray-200 uppercase tracking-widest text-xs"
+                    >
+                        Archive 📁
+                    </button>
+                )}
               </motion.div>
           )}
         </AnimatePresence>

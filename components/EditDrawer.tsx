@@ -32,6 +32,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState<number | null>(null); // index of item being uploaded
   const [previewItem, setPreviewItem] = useState<{ url: string; type: 'image' | 'video' | 'audio' } | null>(null);
+  const [expandedCouponId, setExpandedCouponId] = useState<string | null>(null);
 
   // Fetch posts from a public Instagram profile (username-based, no token)
   const fetchInstagramProfile = async () => {
@@ -275,6 +276,18 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
     }
   };
 
+  const handlePwaIconUpload = async (file: File) => {
+    try {
+      setIsUploading(999);
+      const result = await uploadAPI.upload(file, 'pwa-icon');
+      handleInputChange('pwaIconUrl', result.url);
+    } catch (err: any) {
+      alert(`Icon Upload failed: ${err.message}`);
+    } finally {
+      setIsUploading(null);
+    }
+  };
+
   const isAudio = (url: string) => /\.(mp3|wav|ogg|m4a)$/i.test(url) || url.includes('audio');
   const isVideo = (url: string) => /\.(mp4|webm|mov)$/i.test(url) || url.includes('video');
 
@@ -384,7 +397,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
       initial={{ x: "100%", opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: "100%", opacity: 0 }}
-      className="fixed inset-y-0 right-0 w-full md:w-[550px] md:top-6 md:right-6 md:bottom-6 md:h-[calc(100vh-3rem)] bg-white shadow-2xl z-[100] flex flex-col md:rounded-[3rem] overflow-hidden"
+      className="fixed inset-y-0 right-0 w-full md:w-[550px] md:top-6 md:right-6 md:bottom-6 md:h-[calc(100vh-3rem)] bg-white shadow-2xl z-[100] flex flex-col md:rounded-2xl overflow-hidden"
     >
       {/* Header */}
       <div className="p-6 border-b flex justify-between items-center bg-white shrink-0">
@@ -423,7 +436,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
       <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50 space-y-8 pb-32">
         {activeTab === 'general' && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <i className="fas fa-info-circle text-pink-400"></i> Core Setup
               </h3>
@@ -436,6 +449,92 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                     onChange={(e) => handleInputChange('appName', e.target.value)}
                     className="w-full border-2 border-gray-50 rounded-2xl p-4 focus:border-pink-200 outline-none transition-all"
                   />
+                </div>
+                
+                {/* PWA / App Identity */}
+                <div className="bg-pink-50/30 p-4 rounded-2xl border border-pink-100 space-y-4">
+                  <h4 className="text-xs font-black text-pink-400 uppercase tracking-widest flex items-center gap-2">
+                    <i className="fas fa-mobile-alt"></i> App Identity & PWA
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                     <div>
+                       <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">App Name (Long)</label>
+                       <input 
+                         type="text" 
+                         value={localConfig.pwaName || localConfig.appName || ''} 
+                         onChange={(e) => handleInputChange('pwaName', e.target.value)}
+                         className="w-full border border-gray-200 rounded-xl p-2 text-xs font-bold outline-none focus:border-pink-300"
+                         placeholder="Narinyland"
+                       />
+                     </div>
+                     <div>
+                       <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Short Name</label>
+                       <input 
+                         type="text" 
+                         value={localConfig.pwaShortName || ''} 
+                         onChange={(e) => handleInputChange('pwaShortName', e.target.value)}
+                         className="w-full border border-gray-200 rounded-xl p-2 text-xs font-bold outline-none focus:border-pink-300"
+                         placeholder="Nariny"
+                       />
+                     </div>
+                  </div>
+                  <div>
+                     <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Description</label>
+                     <input 
+                       type="text" 
+                       value={localConfig.pwaDescription || ''} 
+                       onChange={(e) => handleInputChange('pwaDescription', e.target.value)}
+                       className="w-full border border-gray-200 rounded-xl p-2 text-xs font-bold outline-none focus:border-pink-300"
+                       placeholder="Our magical world..."
+                     />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                     <div>
+                       <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Theme Color</label>
+                       <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl p-1.5 pl-3">
+                          <input 
+                            type="color" 
+                            value={localConfig.pwaThemeColor || '#ec4899'} 
+                            onChange={(e) => handleInputChange('pwaThemeColor', e.target.value)}
+                            className="w-6 h-6 rounded-full border-none cursor-pointer"
+                          />
+                          <span className="text-[10px] font-mono text-gray-500">{localConfig.pwaThemeColor || '#ec4899'}</span>
+                       </div>
+                     </div>
+                     <div>
+                       <label className="block text-[9px] font-black text-gray-400 uppercase mb-1">Background Color</label>
+                       <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl p-1.5 pl-3">
+                          <input 
+                            type="color" 
+                            value={localConfig.pwaBackgroundColor || '#ffffff'} 
+                            onChange={(e) => handleInputChange('pwaBackgroundColor', e.target.value)}
+                            className="w-6 h-6 rounded-full border-none cursor-pointer"
+                          />
+                          <span className="text-[10px] font-mono text-gray-500">{localConfig.pwaBackgroundColor || '#ffffff'}</span>
+                       </div>
+                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">App Icon (512x512)</label>
+                    <div className="flex items-center gap-4">
+                       <div className="w-16 h-16 rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden shadow-sm shrink-0">
+                          {localConfig.pwaIconUrl ? (
+                            <img src={localConfig.pwaIconUrl} alt="App Icon" className="w-full h-full object-cover" />
+                          ) : (
+                            <i className="fas fa-mobile text-2xl text-gray-300"></i>
+                          )}
+                       </div>
+                       <label className="cursor-pointer bg-white border border-pink-200 text-pink-500 hover:bg-pink-50 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-sm">
+                          {isUploading === 999 ? 'Uploading...' : 'Upload Icon'}
+                          <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={(e) => e.target.files?.[0] && handlePwaIconUpload(e.target.files[0])} />
+                       </label>
+                       {localConfig.pwaIconUrl && (
+                          <button onClick={() => handleInputChange('pwaIconUrl', null)} className="text-red-400 hover:text-red-500 text-xs px-2">
+                             <i className="fas fa-trash"></i>
+                          </button>
+                       )}
+                    </div>
+                  </div>
                 </div>
                 <div className="col-span-2">
                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest ml-1">Music Playlist (One URL per line) 🎵</label>
@@ -581,17 +680,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                         <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-sm" />
                      </button>
                   </div>
-                  <div className="col-span-2 mt-2">
-                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest ml-1">Example View Mode</label>
-                     <div className="flex bg-gray-100 p-1 rounded-2xl">
-                        <button 
-                           onClick={() => handleInputChange('viewMode', '3d')}
-                           className="flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 bg-white text-pink-500 shadow-md"
-                        >
-                           <i className='fas fa-cube'></i> 3D Garden
-                        </button>
-                     </div>
-                  </div>
+
                   <div className="col-span-2 mt-2">
                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest ml-1">Graphics Quality</label>
                      <select 
@@ -608,11 +697,34 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <i className="fas fa-seedling text-green-400"></i> Growth Settings
+                <i className="fas fa-seedling text-green-400"></i> Garden & Quality
               </h3>
               <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                   <div>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest ml-1">Graphics Quality</label>
+                      <select 
+                         value={localConfig.graphicsQuality || 'medium'} 
+                         onChange={(e) => handleInputChange('graphicsQuality', e.target.value)}
+                         className="w-full border-2 border-gray-50 rounded-2xl p-4 focus:border-pink-200 outline-none bg-white font-bold text-xs"
+                      >
+                         <option value="low">Low (Faster)</option>
+                         <option value="medium">Medium</option>
+                         <option value="high">High (Prettier)</option>
+                      </select>
+                   </div>
+                   <div className="flex flex-col justify-center">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 mb-2">Show QR Code</p>
+                      <button 
+                         onClick={() => handleInputChange('showQRCode', !localConfig.showQRCode)}
+                         className={`w-12 h-6 rounded-full p-1 transition-all flex items-center ${localConfig.showQRCode ? 'bg-green-500 justify-end' : 'bg-gray-200 justify-start'}`}
+                      >
+                         <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-sm" />
+                      </button>
+                   </div>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest ml-1">Days per Tree</label>
@@ -654,7 +766,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                     <motion.div 
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="bg-pink-50/50 p-4 rounded-3xl border border-pink-100 flex flex-wrap gap-2"
+                      className="bg-pink-50/50 p-4 rounded-2xl border border-pink-100 flex flex-wrap gap-2"
                     >
                       <p className="w-full text-[9px] font-black text-pink-400 uppercase tracking-widest mb-1 ml-1">Include in Mix:</p>
                       {[
@@ -695,7 +807,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <i className="fas fa-stream text-purple-400"></i> Timeline Display
               </h3>
@@ -713,9 +825,22 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                 </div>
                 <p className="text-[9px] text-gray-400 mt-1 ml-1">Number of year rows visible before "Explore Further" button</p>
               </div>
+
+              <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+                 <div>
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Show Coupons in Story</p>
+                    <p className="text-[8px] text-gray-300 font-bold tracking-tight ml-1">Events for redeemed coupons</p>
+                 </div>
+                 <button 
+                    onClick={() => handleInputChange('showCouponsOnTimeline', !localConfig.showCouponsOnTimeline)}
+                    className={`w-12 h-6 rounded-full p-1 transition-all flex items-center ${localConfig.showCouponsOnTimeline ? 'bg-pink-500 justify-end' : 'bg-gray-200 justify-start'}`}
+                 >
+                    <motion.div layout className="w-4 h-4 bg-white rounded-full shadow-sm" />
+                 </button>
+              </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <i className="fas fa-user-friends text-blue-400"></i> The Couple
               </h3>
@@ -761,7 +886,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
 
         {activeTab === 'proposal' && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-gray-800 flex items-center gap-2">
                   <i className="fas fa-heart text-red-400"></i> Proposal Flow
@@ -802,7 +927,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <i className="fas fa-check-circle text-green-400"></i> Proposal Status
               </h3>
@@ -889,7 +1014,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
 
         {activeTab === 'gallery' && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-             <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Gallery Interaction</label>
                 <div className="flex bg-gray-100 rounded-2xl p-1.5 mb-4">
                    <button 
@@ -995,7 +1120,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                 }}
                 className={`
                   relative group cursor-pointer transition-all duration-300
-                  border-2 border-dashed rounded-3xl py-8 flex flex-col items-center justify-center gap-3 mb-6
+                  border-2 border-dashed rounded-2xl py-8 flex flex-col items-center justify-center gap-3 mb-6
                   ${isDraggingOver ? 'border-pink-500 bg-pink-50' : 'border-gray-200 hover:border-pink-300 hover:bg-gray-50'}
                 `}
              >
@@ -1085,119 +1210,150 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                  <button onClick={addTimelineEvent} className="bg-pink-500 text-white text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md">+ New Event</button>
               </div>
 
-              {/* Timeline Card Scaling */}
-              <div className="bg-gray-50/50 p-4 rounded-2xl border border-gray-100 space-y-3">
-                 <div className="flex justify-between items-center px-1">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Card Sizing (Desktop)</p>
-                    <span className="text-pink-500 font-bold text-[10px]">
-                       {Math.round((localConfig.timelineCardScale || 1.0) * 100)}%
-                    </span>
-                 </div>
-                 <input 
-                    type="range"
-                    min="0.5"
-                    max="1.5"
-                    step="0.05"
-                    value={localConfig.timelineCardScale || 1.0}
-                    onChange={(e) => handleInputChange('timelineCardScale', parseFloat(e.target.value))}
-                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-pink-500"
-                 />
-              </div>
-              {localConfig.timeline.map(item => (
-                 <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-3">
-                    <div className="flex gap-2">
-                       <DatePicker
-                         selected={item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp as any)}
-                         onChange={(date: Date | null) => date && handleTimelineChange(item.id, 'timestamp', date)}
-                         showTimeSelect
-                         dateFormat="Pp"
-                         className="flex-1 text-xs border rounded-xl p-2 bg-gray-50 bg-white"
-                       />
-                       <select 
-                         value={item.type} 
-                         onChange={(e) => handleTimelineChange(item.id, 'type', e.target.value)}
-                         className="text-xs border rounded-xl p-2 bg-gray-50"
-                       >
-                          <option value="system">Event</option>
-                          <option value="pet">Message</option>
-                       </select>
-                    </div>
-                    <textarea 
-                      value={item.text} 
-                      onChange={(e) => handleTimelineChange(item.id, 'text', e.target.value)}
-                      className="w-full text-sm border rounded-xl p-3 focus:border-pink-200 outline-none resize-none"
-                      rows={2}
-                    />
+               {/* View Settings (Moved from Timeline Toolbar) */}
+               <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <i className="fas fa-eye text-blue-400"></i> View Settings
+                  </h3>
+                  
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest ml-1">Layout Mode</label>
+                  <div className="flex bg-gray-100 p-1 rounded-2xl mb-4">
+                        {([
+                           { id: 'wave', label: 'Wave', icon: 'fa-water' },
+                           { id: 'snake', label: 'Snake', icon: 'fa-road' },
+                           { id: 'vertical', label: 'Vertical', icon: 'fa-arrows-alt-v' }
+                        ] as const).map((mode) => (
+                           <button
+                              key={mode.id}
+                              onClick={() => handleInputChange('timelineLayoutMode', mode.id)}
+                              className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+                                    (localConfig.timelineLayoutMode || 'wave') === mode.id 
+                                    ? 'bg-white text-pink-500 shadow-md' 
+                                    : 'text-gray-400 hover:text-gray-600'
+                              }`}
+                           >
+                              <i className={`fas ${mode.icon}`}></i> {mode.label}
+                           </button>
+                        ))}
+                  </div>
 
-                    {/* Timeline Media Section */}
-                    <div className="flex flex-col gap-2 p-2 bg-gray-50 rounded-2xl border border-gray-100">
-                       <div className="flex justify-between items-center px-1">
-                          <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Attachment</label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest ml-1">Zoom Level</label>
+                  <input 
+                        type="range"
+                        min="0"
+                        max="7"
+                        step="1"
+                        value={localConfig.timelineZoomLevel || 0}
+                        onChange={(e) => handleInputChange('timelineZoomLevel', parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                  />
+                  <div className="flex justify-between text-[8px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
+                        <span>Close</span>
+                        <span>Far</span>
+                  </div>
+               </div>
+
+              {/* Timeline Display Settings */}
+              <div className="bg-gray-50/50 p-4 rounded-2xl border border-gray-100 space-y-4">
+                 <div className="space-y-2">
+                     <div className="flex justify-between items-center px-1">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Card Sizing (Desktop)</p>
+                        <span className="text-pink-500 font-bold text-[10px]">
+                           {Math.round((localConfig.timelineCardScale || 1.0) * 100)}%
+                        </span>
+                     </div>
+                     <input 
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.05"
+                        value={localConfig.timelineCardScale || 1.0}
+                        onChange={(e) => handleInputChange('timelineCardScale', parseFloat(e.target.value))}
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                     />
+                 </div>
+
+                 <div className="space-y-2 border-t border-gray-200 pt-3">
+                     <div className="flex justify-between items-center px-1">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Thumbnail Size (Square)</p>
+                        <span className="text-pink-500 font-bold text-[10px]">
+                           {localConfig.timelineThumbnailHeight || 150}px
+                        </span>
+                     </div>
+                     <input 
+                        type="range"
+                        min="50"
+                        max="400"
+                        step="10"
+                        value={localConfig.timelineThumbnailHeight || 150}
+                        onChange={(e) => handleInputChange('timelineThumbnailHeight', parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                     />
+                 </div>
+              </div>
+              <div className="space-y-2">
+                 {localConfig.timeline.map((item, idx) => (
+                    <motion.div 
+                       key={item.id} 
+                       initial={{ opacity: 0, x: -10 }} 
+                       animate={{ opacity: 1, x: 0, transition: { delay: idx * 0.05 } }}
+                       className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-3 hover:shadow-md transition-all group"
+                    >
+                       <div className="w-10 h-10 shrink-0 bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center border border-gray-200 relative">
+                           {item.media?.type === 'image' && <img src={item.media.url} className="w-full h-full object-cover" />}
+                           {item.media?.type === 'video' && <i className="fas fa-video text-blue-400"></i>}
+                           {item.media?.type === 'audio' && <i className="fas fa-microphone text-orange-400"></i>}
+                           {!item.media && <i className="fas fa-sticky-note text-gray-300"></i>}
+                           
+                           <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity z-10">
+                              <i className="fas fa-camera text-white text-[10px]"></i>
+                              <input 
+                                 type="file" 
+                                 className="hidden" 
+                                 accept="image/*,video/*"
+                                 onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleTimelineFileUpload(item.id, file);
+                                 }}
+                              />
+                           </label>
+                       </div>
+
+                       <div className="flex-1 min-w-0 grid grid-cols-1 gap-1">
                           <div className="flex gap-2">
-                             <button 
-                                onClick={() => {
-                                   const input = document.createElement('input');
-                                   input.type = 'file';
-                                   input.accept = 'image/*,audio/*,video/*';
-                                   input.onchange = (e) => {
-                                      const file = (e.target as HTMLInputElement).files?.[0];
-                                      if (file) handleTimelineFileUpload(item.id, file);
-                                   };
-                                   input.click();
-                                }}
-                                className="text-[8px] font-black text-blue-500 uppercase bg-blue-50 px-2 py-1 rounded-md hover:bg-blue-100 transition-all border border-blue-100"
-                             >
-                                <i className="fas fa-cloud-upload-alt mr-1"></i> Upload
-                             </button>
-                             {item.media && (
-                                <button 
-                                  onClick={() => handleTimelineChange(item.id, 'media', undefined)}
-                                  className="text-[8px] font-black text-red-400 uppercase bg-red-50 px-2 py-1 rounded-md hover:bg-red-100 transition-all border border-red-100"
-                                >
-                                   Remove
-                                </button>
-                             )}
+                             <DatePicker
+                                selected={item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp as any)}
+                                onChange={(date: Date | null) => date && handleTimelineChange(item.id, 'timestamp', date)}
+                                showTimeSelect
+                                dateFormat="MM/dd/yy"
+                                className="w-20 text-[10px] font-bold text-gray-500 bg-transparent outline-none p-0 cursor-pointer hover:text-pink-500"
+                             />
+                             <input 
+                               type="text"
+                               value={item.text}
+                               onChange={(e) => handleTimelineChange(item.id, 'text', e.target.value)}
+                               className="flex-1 text-xs font-bold text-gray-800 bg-transparent outline-none truncate focus:text-pink-600 focus:bg-pink-50/50 rounded-md px-1"
+                             />
                           </div>
                        </div>
 
-                       {item.media ? (
-                          <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-white">
-                             {item.media.type === 'image' && (
-                                <img 
-                                  src={item.media.url} 
-                                  className="w-12 h-12 rounded-lg object-cover border cursor-zoom-in hover:brightness-90 transition-all" 
-                                  onClick={() => setPreviewItem({ url: (item.media as any).url, type: 'image' })}
-                                />
-                             )}
-                             {item.media.type === 'audio' && (
-                                <div className="flex-1 flex flex-col gap-1">
-                                   <div className="flex items-center gap-2 text-[9px] font-bold text-orange-500">
-                                      <i className="fas fa-microphone"></i> VOICE MEMORY
-                                   </div>
-                                   <audio controls src={item.media.url} className="w-full h-8 opacity-80" />
-                                </div>
-                             )}
-                             {item.media.type === 'video' && (
-                                <div 
-                                  className="flex-1 flex items-center gap-2 text-[10px] font-bold text-blue-500 cursor-pointer hover:bg-blue-50 p-1 rounded-lg transition-colors"
-                                  onClick={() => setPreviewItem({ url: (item.media as any).url, type: 'video' })}
-                                >
-                                   <i className="fas fa-video"></i> Video Milestone
-                                </div>
-                             )}
-                          </div>
-                       ) : (
-                          <p className="text-[9px] text-gray-400 italic text-center py-1">No media attached to this event</p>
-                       )}
-                    </div>
-                    <div className="flex justify-end">
                        <button 
-                         onClick={() => updateLocal(prev => ({ ...prev, timeline: prev.timeline.filter(t => t.id !== item.id) }))}
-                         className="text-[10px] font-black text-red-400 uppercase tracking-widest p-1"
-                       >Delete</button>
-                    </div>
-                 </div>
-              ))}
+                          onClick={() => {
+                             if(confirm('Delete event?')) updateLocal(prev => ({ 
+                                ...prev, 
+                                timeline: prev.timeline.filter(t => t.id !== item.id) 
+                             }));
+                          }}
+                          className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all shrink-0"
+                       >
+                          <i className="fas fa-trash-alt text-xs"></i>
+                       </button>
+                    </motion.div>
+                 ))}
+              </div>
+
+
+
            </motion.div>
         )}
 
@@ -1222,76 +1378,135 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                  <h3 className="font-black text-gray-700 uppercase text-[11px] tracking-widest">Gifts & Vouchers</h3>
                  <button onClick={addCoupon} className="bg-purple-600 text-white text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md">+ Add Coupon</button>
               </div>
-              {localConfig.coupons.map(coupon => (
-                 <div key={coupon.id} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 space-y-3">
-                    <div className="flex gap-3">
-                       <input 
-                         type="text" 
-                         value={coupon.emoji} 
-                         onChange={(e) => handleCouponChange(coupon.id, 'emoji', e.target.value)}
-                         className="w-14 text-center border rounded-xl p-2 text-2xl"
-                       />
-                       <input 
-                         type="text" 
-                         value={coupon.title} 
-                         onChange={(e) => handleCouponChange(coupon.id, 'title', e.target.value)}
-                         className="flex-1 border-2 border-gray-100 rounded-xl p-4 font-black text-base focus:border-purple-200 outline-none transition-all"
-                       />
-                    </div>
-                    <input 
-                      type="text" 
-                      value={coupon.desc} 
-                      onChange={(e) => handleCouponChange(coupon.id, 'desc', e.target.value)}
-                      className="w-full border-2 border-gray-100 rounded-xl p-4 text-sm font-bold focus:border-purple-200 outline-none transition-all"
-                      placeholder="Coupon description..."
-                    />
-                     <div className="flex gap-2 items-center">
-                        <label className="text-[10px] uppercase font-black text-gray-400 tracking-widest">Points:</label>
-                        <input
-                           type="number"
-                           min="0"
-                           step="100"
-                           value={coupon.points || 0}
-                           onChange={(e) => handleCouponChange(coupon.id, 'points', parseInt(e.target.value))}
-                           className="w-24 border-2 border-gray-100 rounded-xl p-3 text-sm font-bold focus:border-purple-200 outline-none transition-all"
-                        />
+              {localConfig.coupons.map(coupon => {
+                 const isExpanded = expandedCouponId === coupon.id;
+                 return (
+                  <div 
+                     key={coupon.id} 
+                     className={`bg-white rounded-2xl shadow-sm border border-gray-100 transition-all duration-300 ${isExpanded ? 'p-4 ring-2 ring-pink-100' : 'p-3 hover:shadow-md cursor-pointer'}`}
+                     onClick={() => !isExpanded && setExpandedCouponId(coupon.id)}
+                  >
+                     <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-pink-50 rounded-2xl flex items-center justify-center text-2xl shadow-inner">
+                           {coupon.emoji}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                           <h4 className="font-black text-gray-800 truncate">{coupon.title}</h4>
+                           <div className="flex items-center gap-2 text-xs text-gray-400 font-bold">
+                              <span className="bg-yellow-100 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] uppercase">{coupon.points || 0} PTS</span>
+                              <span>•</span>
+                              <span>{coupon.for === 'partner1' ? localConfig.partners.partner1.name : localConfig.partners.partner2.name}</span>
+                              {coupon.isRedeemed && <span className="text-red-400">• Redeemed</span>}
+                           </div>
+                        </div>
+                        <button 
+                           onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedCouponId(isExpanded ? null : coupon.id);
+                           }}
+                           className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-pink-500 transition-colors"
+                        >
+                           <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'}`}></i>
+                        </button>
                      </div>
-                    <div className="flex justify-between items-center">
-                       <div className="flex items-center gap-4">
-                          <select 
-                            value={coupon.for} 
-                            onChange={(e) => handleCouponChange(coupon.id, 'for', e.target.value)}
-                            className="text-[10px] font-black border rounded-lg p-1 bg-gray-50 uppercase"
-                          >
-                             <option value="partner1">Her</option>
-                             <option value="partner2">Him</option>
-                          </select>
-                          <label className="flex items-center gap-2 cursor-pointer select-none group/toggle">
-                             <div 
-                                onClick={() => handleCouponChange(coupon.id, 'isRedeemed', !coupon.isRedeemed)}
-                                className={`w-8 h-4 rounded-full transition-all relative ${coupon.isRedeemed ? 'bg-red-500' : 'bg-gray-200'}`}
-                             >
-                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${coupon.isRedeemed ? 'left-4.5' : 'left-0.5'}`} />
-                             </div>
-                             <span className={`text-[9px] font-black uppercase tracking-widest ${coupon.isRedeemed ? 'text-red-500' : 'text-gray-400'}`}>
-                                {coupon.isRedeemed ? 'Redeemed' : 'Unused'}
-                             </span>
-                          </label>
-                       </div>
-                       <button 
-                         onClick={() => {
-                            if (window.confirm("Delete this coupon?")) {
-                               updateLocal(prev => ({ ...prev, coupons: prev.coupons.filter(c => c.id !== coupon.id) }));
-                            }
-                         }}
-                         className="w-8 h-8 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-500 hover:text-white transition-all shadow-sm"
-                         title="Delete Coupon"
-                       >
-                          <i className="fas fa-trash-alt text-xs"></i>
-                       </button>
-                    </div>
-                 </div>
-              ))}
+
+                     <AnimatePresence>
+                        {isExpanded && (
+                           <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                           >
+                              <div className="pt-4 mt-2 border-t border-gray-50 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+                                 <div className="flex gap-3">
+                                    <div className="flex flex-col gap-1">
+                                       <label className="text-[9px] uppercase font-black text-gray-400 tracking-widest pl-1">Emoji</label>
+                                       <input 
+                                          type="text" 
+                                          value={coupon.emoji} 
+                                          onChange={(e) => handleCouponChange(coupon.id, 'emoji', e.target.value)}
+                                          className="w-16 text-center border rounded-xl p-2 text-2xl"
+                                       />
+                                    </div>
+                                    <div className="flex-1 flex flex-col gap-1">
+                                       <label className="text-[9px] uppercase font-black text-gray-400 tracking-widest pl-1">Title</label>
+                                       <input 
+                                          type="text" 
+                                          value={coupon.title} 
+                                          onChange={(e) => handleCouponChange(coupon.id, 'title', e.target.value)}
+                                          className="w-full border-2 border-gray-100 rounded-xl p-3 font-black text-sm focus:border-purple-200 outline-none transition-all"
+                                       />
+                                    </div>
+                                 </div>
+                                 
+                                 <div className="flex flex-col gap-1">
+                                    <label className="text-[9px] uppercase font-black text-gray-400 tracking-widest pl-1">Description</label>
+                                    <input 
+                                       type="text" 
+                                       value={coupon.desc} 
+                                       onChange={(e) => handleCouponChange(coupon.id, 'desc', e.target.value)}
+                                       className="w-full border-2 border-gray-100 rounded-xl p-3 text-xs font-bold focus:border-purple-200 outline-none transition-all"
+                                       placeholder="Coupon description..."
+                                    />
+                                 </div>
+
+                                 <div className="flex gap-3">
+                                    <div className="flex flex-col gap-1">
+                                       <label className="text-[9px] uppercase font-black text-gray-400 tracking-widest pl-1">Points</label>
+                                       <input
+                                          type="number"
+                                          min="0"
+                                          step="100"
+                                          value={coupon.points || 0}
+                                          onChange={(e) => handleCouponChange(coupon.id, 'points', parseInt(e.target.value))}
+                                          className="w-24 border-2 border-gray-100 rounded-xl p-3 text-xs font-bold focus:border-purple-200 outline-none transition-all"
+                                       />
+                                    </div>
+                                    <div className="flex-1 flex flex-col gap-1">
+                                       <label className="text-[9px] uppercase font-black text-gray-400 tracking-widest pl-1">For Who?</label>
+                                       <select 
+                                          value={coupon.for} 
+                                          onChange={(e) => handleCouponChange(coupon.id, 'for', e.target.value)}
+                                          className="w-full text-xs font-black border rounded-xl p-3 bg-gray-50 uppercase"
+                                       >
+                                          <option value="partner1">{localConfig.partners.partner1.name}</option>
+                                          <option value="partner2">{localConfig.partners.partner2.name}</option>
+                                       </select>
+                                    </div>
+                                 </div>
+
+                                 <div className="flex justify-between items-center pt-2 border-t border-gray-50 mt-1">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none group/toggle">
+                                       <div 
+                                          onClick={() => handleCouponChange(coupon.id, 'isRedeemed', !coupon.isRedeemed)}
+                                          className={`w-8 h-4 rounded-full transition-all relative ${coupon.isRedeemed ? 'bg-red-500' : 'bg-gray-200'}`}
+                                       >
+                                          <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${coupon.isRedeemed ? 'left-4.5' : 'left-0.5'}`} />
+                                       </div>
+                                       <span className={`text-[9px] font-black uppercase tracking-widest ${coupon.isRedeemed ? 'text-red-500' : 'text-gray-400'}`}>
+                                          {coupon.isRedeemed ? 'Redeemed' : 'Unused'}
+                                       </span>
+                                    </label>
+
+                                    <button 
+                                       onClick={(e) => {
+                                          if (window.confirm("Delete this coupon?")) {
+                                             updateLocal(prev => ({ ...prev, coupons: prev.coupons.filter(c => c.id !== coupon.id) }));
+                                          }
+                                       }}
+                                       className="text-[9px] font-black text-red-400 uppercase tracking-widest bg-red-50 px-3 py-1.5 rounded-lg hover:bg-red-500 hover:text-white transition-all"
+                                    >
+                                       Delete Coupon
+                                    </button>
+                                 </div>
+                              </div>
+                           </motion.div>
+                        )}
+                     </AnimatePresence>
+                  </div>
+                 );
+              })}
            </motion.div>
         )}
       </div>
@@ -1362,7 +1577,7 @@ const EditDrawer: React.FC<EditDrawerProps> = ({ isOpen, onClose, config, setCon
                  />
                )}
                {previewItem.type === 'audio' && (
-                 <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 min-w-[300px]">
+                 <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-6 min-w-[300px]">
                     <div className="w-20 h-20 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center text-4xl">
                       <i className="fas fa-microphone"></i>
                     </div>

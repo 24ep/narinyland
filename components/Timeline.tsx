@@ -18,7 +18,13 @@ interface TimelineProps {
   onUpdateInteraction?: (interaction: Interaction) => void;
   onDeleteInteraction?: (id: string) => void;
   onOpenSpreadsheet?: () => void;
+
   cardScale?: number;
+  layoutMode?: 'vertical' | 'wave' | 'snake';
+  zoomLevel?: number; // 0-7 index
+  thumbnailHeight?: number;
+  onOpenSettings?: () => void;
+  onUpdateConfig?: (config: { layoutMode?: 'vertical' | 'wave' | 'snake', zoomLevel?: number }) => void;
 }
 
 const Timeline: React.FC<TimelineProps> = ({ 
@@ -29,14 +35,50 @@ const Timeline: React.FC<TimelineProps> = ({
   onUpdateInteraction, 
   onDeleteInteraction,
   onOpenSpreadsheet,
-  cardScale = 1.0
+  cardScale = 1.0,
+  layoutMode: initialLayoutMode = 'vertical',
+  zoomLevel: initialZoomLevel = 0,
+  thumbnailHeight = 150,
+  onOpenSettings,
+  onUpdateConfig
 }) => {
-  const [zoomLevel, setZoomLevel] = useState<1 | 5 | 10 | 30 | 60 | 100 | 200 | 500>(1);
+  const [layoutMode, setLayoutMode] = useState(initialLayoutMode);
+  const [zoomLevel, setZoomLevel] = useState(initialZoomLevel);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(800);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      const updateWidth = () => {
+        setContainerWidth(containerRef.current?.offsetWidth || 800);
+      };
+      updateWidth();
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }
+  }, []);
+
+  const handleLayoutModeChange = (newMode: 'vertical' | 'wave' | 'snake') => {
+    setLayoutMode(newMode);
+    onUpdateConfig?.({ layoutMode: newMode });
+  };
+
+  const handleZoomLevelChange = (newZoom: number) => {
+    setZoomLevel(newZoom);
+    onUpdateConfig?.({ zoomLevel: newZoom });
+  };
+
+  useEffect(() => setLayoutMode(initialLayoutMode), [initialLayoutMode]);
+  useEffect(() => setZoomLevel(initialZoomLevel), [initialZoomLevel]);
+
+  const ZOOM_LEVELS = [1, 5, 10, 30, 60, 100, 200, 500];
+  const effectiveZoom = ZOOM_LEVELS[zoomLevel] || 1;
+
   const [activeItem, setActiveItem] = useState<Interaction | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-  const [layoutMode, setLayoutMode] = useState<'wave' | 'snake'>('wave');
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [isAddMediaOpen, setIsAddMediaOpen] = useState(false);
   
   // Media & Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -105,16 +147,44 @@ const Timeline: React.FC<TimelineProps> = ({
     const endDate = sorted[sorted.length - 1].timestamp; // Ensure we cover the full range
     const startTime = startDate.getTime();
 
+    // --- VERTICAL MODE CALCULATION ---
+    if (layoutMode === 'vertical') {
+        const rowHeight = effectiveZoom === 1 ? 150 : effectiveZoom === 5 ? 250 : effectiveZoom === 10 ? 400 : 800; // Adjusted based on zoom
+        const centerX = containerWidth / 2;
+        
+        // Ensure centerX is used correctly even on mobile
+        const itemsWithPos = sorted.map((item, index) => {
+             const isRightSide = index % 2 === 0;
+             return {
+                ...item,
+                x: centerX,
+                y: 100 + index * rowHeight,
+                isRightSide, 
+                isFuture: item.timestamp.getTime() > Date.now(),
+                rotation: 0
+             };
+        });
+        
+        return { 
+           items: itemsWithPos, 
+           height: itemsWithPos.length * rowHeight + 200, 
+           path: `M ${centerX} 0 L ${centerX} ${itemsWithPos.length * rowHeight + 200}`, 
+           centerX, 
+           nowY: -1, 
+           snakeMode: false 
+        };
+    }
+
     // --- SNAKE MODE CALCULATION ---
     if (layoutMode === 'snake') {
         const startYear = startDate.getFullYear();
         // Ensure endYear covers current year for "Today" marker
         const endYear = Math.max(new Date().getFullYear(), endDate.getFullYear());
         const totalRows = endYear - startYear + 1;
-        const rowHeight = zoomLevel === 1 ? 180 : zoomLevel === 5 ? 300 : zoomLevel === 10 ? 500 : zoomLevel === 30 ? 1000 : zoomLevel === 60 ? 2000 : zoomLevel === 100 ? 3500 : zoomLevel === 200 ? 7000 : 15000;
-        const containerWidth = Math.min(windowWidth, 800); 
-        const sidePad = windowWidth < 640 ? 15 : (zoomLevel === 1 ? 160 : zoomLevel === 5 ? 100 : zoomLevel === 10 ? 60 : 40);
-        const activeWidth = containerWidth - (sidePad * 2);
+        const rowHeight = effectiveZoom === 1 ? 180 : effectiveZoom === 5 ? 300 : effectiveZoom === 10 ? 500 : effectiveZoom === 30 ? 1000 : effectiveZoom === 60 ? 2000 : effectiveZoom === 100 ? 3500 : effectiveZoom === 200 ? 7000 : 15000;
+        const localContainerWidth = containerWidth || Math.min(windowWidth, 800); 
+        const sidePad = windowWidth < 640 ? 15 : (effectiveZoom === 1 ? 160 : effectiveZoom === 5 ? 100 : effectiveZoom === 10 ? 60 : 40);
+        const activeWidth = localContainerWidth - (sidePad * 2);
         
         let pathD = '';
         const itemsWithPos: any[] = [];
@@ -126,8 +196,8 @@ const Timeline: React.FC<TimelineProps> = ({
            const rowY = i * rowHeight + 100; // Start with some padding
            
            // Path Points
-           const startX = isEven ? sidePad : containerWidth - sidePad;
-           const endX = isEven ? containerWidth - sidePad : sidePad;
+           const startX = isEven ? sidePad : localContainerWidth - sidePad;
+           const endX = isEven ? localContainerWidth - sidePad : sidePad;
            
            if (i === 0) pathD += `M ${startX} ${rowY}`;
            
@@ -137,9 +207,9 @@ const Timeline: React.FC<TimelineProps> = ({
            // Connector to next row (if not last)
              if (i < totalRows - 1) {
                const nextRowY = rowY + rowHeight;
-               const cp1x = isEven ? containerWidth : 0;
+               const cp1x = isEven ? localContainerWidth : 0;
                const cp1y = rowY;
-               const cp2x = isEven ? containerWidth : 0;
+               const cp2x = isEven ? localContainerWidth : 0;
                const cp2y = nextRowY;
                pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${nextRowY}`;
              }
@@ -156,7 +226,7 @@ const Timeline: React.FC<TimelineProps> = ({
               
               const x = isEven 
                 ? sidePad + (visualProgress * activeWidth)
-                : (containerWidth - sidePad) - (visualProgress * activeWidth);
+                : (localContainerWidth - sidePad) - (visualProgress * activeWidth);
                 
               // Staggering: Offset Y slightly if items are tight
               const staggerY = yearItems.length > 1 ? (index % 2 === 0 ? -30 : 30) : 0;
@@ -189,14 +259,14 @@ const Timeline: React.FC<TimelineProps> = ({
            
            nowX = isEven 
                 ? sidePad + (progress * activeWidth)
-                : (containerWidth - sidePad) - (progress * activeWidth);
+                : (localContainerWidth - sidePad) - (progress * activeWidth);
         }
 
-        return { items: itemsWithPos, height: totalRows * rowHeight + 200, path: pathD, centerX: containerWidth/2, nowY, nowX, snakeMode: true };
+        return { items: itemsWithPos, height: totalRows * rowHeight + 200, path: pathD, centerX: localContainerWidth/2, nowY, nowX, snakeMode: true };
     }
 
     // --- WAVE MODE CALCULATION ---
-    const pxPerYear = zoomLevel === 1 ? 150 : zoomLevel === 5 ? 300 : zoomLevel === 10 ? 600 : zoomLevel === 30 ? 1500 : zoomLevel === 60 ? 3000 : zoomLevel === 100 ? 6000 : zoomLevel === 200 ? 12000 : 30000; 
+    const pxPerYear = effectiveZoom === 1 ? 150 : effectiveZoom === 5 ? 300 : effectiveZoom === 10 ? 600 : effectiveZoom === 30 ? 1500 : effectiveZoom === 60 ? 3000 : effectiveZoom === 100 ? 6000 : effectiveZoom === 200 ? 12000 : 30000; 
     const pxPerMs = pxPerYear / (365 * 24 * 60 * 60 * 1000);
     
     // Check total height required
@@ -205,8 +275,8 @@ const Timeline: React.FC<TimelineProps> = ({
 
     // Curve Parameters
     // Curve Parameters
-    const containerWidth = Math.min(windowWidth, 1200);
-    const centerX = containerWidth / 2; 
+    const localContainerWidth = containerWidth || Math.min(windowWidth, 1200);
+    const centerX = localContainerWidth / 2; 
     const amplitude = windowWidth < 640 ? 80 : 250; 
     const wavelength = 350; 
 
@@ -259,7 +329,7 @@ const Timeline: React.FC<TimelineProps> = ({
     });
 
     return { items: itemsWithPos, height: totalHeight, path: pathData, centerX, nowY, snakeMode: false };
-  }, [allInteractions, zoomLevel, windowWidth, layoutMode]);
+  }, [allInteractions, effectiveZoom, containerWidth, layoutMode]);
 
 
   const handleEditClick = (item: Interaction) => {
@@ -308,7 +378,7 @@ const Timeline: React.FC<TimelineProps> = ({
     setActiveItem(null);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video' | 'audio') => {
     const files = e.target.files;
     if (files && files.length > 0 && activeItem) {
       const newItems: MediaContent[] = Array.from(files).map(file => ({
@@ -390,83 +460,50 @@ const Timeline: React.FC<TimelineProps> = ({
       <div className="fixed top-28 right-4 lg:right-10 z-50 flex flex-col gap-4 items-end pointer-events-none">
          
           <div className="pointer-events-auto flex flex-col gap-2 items-end">
-              {/* COMBINED TOOLBAR - VERTICAL */}
-               <div className="bg-white/90 backdrop-blur-md p-1 md:p-1.5 rounded-2xl shadow-lg border border-pink-100 flex flex-col items-center gap-2 md:gap-3 relative isolate pb-2 md:pb-4">
-                  {/* Mode Toggles */}
-                  <div className="flex flex-col items-center bg-gray-50/50 rounded-xl p-0.5 gap-1">
-                    {([
-                        { id: 'wave', label: 'Wave', icon: 'fa-water fa-rotate-90' },
-                        { id: 'snake', label: 'Snake', icon: 'fa-road' }
-                    ] as const).map((mode) => (
-                        <button
-                            key={mode.id}
-                            onClick={() => setLayoutMode(mode.id)}
-                             className={`
-                                 relative z-10 p-1.5 md:p-3 rounded-xl text-[10px] md:text-xs font-black transition-colors flex flex-col items-center justify-center gap-1 w-full
-                                 ${layoutMode === mode.id ? 'text-white' : 'text-gray-400 hover:text-pink-400'}
-                             `}
-                        >
-                            {layoutMode === mode.id && (
-                                <motion.div
-                                    layoutId="activeLayoutTab"
-                                    className="absolute inset-0 bg-gradient-to-r from-pink-500 to-rose-500 rounded-xl shadow-md -z-10"
-                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                />
-                            )}
-                             <i className={`fas ${mode.icon} text-sm md:text-lg`}></i>
-                        </button>
-                    ))}
-                  </div>
-
-                  <div className="w-6 h-px bg-pink-100"></div>
-
-                  {/* Zoom Slider - Vertical */}
-                  <div className="flex flex-col items-center gap-2 py-1">
-                       <button onClick={() => setZoomLevel(prev => {
-                          const levels = [1, 5, 10, 30, 60, 100, 200, 500];
-                          const idx = levels.indexOf(prev);
-                          return idx < levels.length - 1 ? levels[idx+1] as any : prev;
-                       })} className="text-gray-400 hover:text-pink-500 transition-colors">
-                          <i className="fas fa-search-plus text-[10px]"></i>
-                       </button>
-
-                        <div className="h-16 md:h-24 w-6 flex items-center justify-center">
-                           <input 
-                              type="range" 
-                              min="0" 
-                              max="7" 
-                              step="1"
-                              value={[1, 5, 10, 30, 60, 100, 200, 500].indexOf(zoomLevel)}
-                               className="w-16 md:w-24 h-1 md:h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-pink-500 hover:accent-pink-600 transition-all -rotate-90"
-                              onChange={(e) => {
-                                 const val = parseInt(e.target.value);
-                                 const levels: (1 | 5 | 10 | 30 | 60 | 100 | 200 | 500)[] = [1, 5, 10, 30, 60, 100, 200, 500];
-                                 setZoomLevel(levels[val]);
-                              }}
-                           />
-                       </div>
-                       
-                       <button onClick={() => setZoomLevel(prev => {
-                          const levels = [1, 5, 10, 30, 60, 100, 200, 500];
-                          const idx = levels.indexOf(prev);
-                          return idx > 0 ? levels[idx-1] as any : prev;
-                       })} className="text-gray-400 hover:text-pink-500 transition-colors">
-                          <i className="fas fa-search-minus text-[10px]"></i>
-                       </button>
-                  </div>
-                  
-                  <div className="w-6 h-px bg-pink-100"></div>
-
+              <div className="flex flex-col gap-2 mb-2 p-1 bg-white/50 backdrop-blur-sm rounded-full">
                   <button 
-                    onClick={() => onOpenSpreadsheet?.()}
-                    className="p-2 rounded-xl text-gray-400 hover:bg-pink-50 hover:text-pink-500 transition-all flex items-center justify-center gap-2 group"
-                    title="Open Spreadsheet (Bulk Edit)"
+                     onClick={() => {
+                        const modes: ('vertical' | 'wave' | 'snake')[] = ['vertical', 'wave', 'snake'];
+                        const next = modes[(modes.indexOf(layoutMode) + 1) % 3];
+                        handleLayoutModeChange(next);
+                     }}
+                     className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-purple-500 hover:bg-purple-50 transition-all border border-purple-100"
+                     title={`Switch View: ${layoutMode}`}
                   >
-                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-pink-50 flex items-center justify-center group-hover:bg-pink-100 transition-colors">
-                         <i className="fas fa-table text-pink-500 text-xs md:text-sm"></i>
-                      </div>
+                     <i className={`fas ${layoutMode === 'vertical' ? 'fa-stream' : layoutMode === 'wave' ? 'fa-water' : 'fa-route'}`}></i>
+                  </button>
+                  <button 
+                     onClick={() => handleZoomLevelChange(Math.min(7, zoomLevel + 1))}
+                     className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-blue-500 hover:bg-blue-50 transition-all border border-blue-100"
+                     title="Zoom In"
+                  >
+                     <i className="fas fa-search-plus text-sm"></i>
+                  </button>
+                  <button 
+                     onClick={() => handleZoomLevelChange(Math.max(0, zoomLevel - 1))}
+                     className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-blue-500 hover:bg-blue-50 transition-all border border-blue-100"
+                     title="Zoom Out"
+                  >
+                     <i className="fas fa-search-minus text-sm"></i>
                   </button>
               </div>
+
+              <button 
+                  onClick={() => onOpenSpreadsheet?.()}
+                  className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-pink-500 hover:bg-pink-50 transition-all border border-pink-100"
+                  title="Open Spreadsheet (Bulk Edit)"
+              >
+                  <i className="fas fa-table"></i>
+              </button>
+              {onOpenSettings && (
+                <button 
+                    onClick={() => onOpenSettings()}
+                    className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-all border border-gray-100"
+                    title="Timeline Settings"
+                >
+                    <i className="fas fa-cog"></i>
+                </button>
+              )}
           </div>
          
           <button 
@@ -487,7 +524,7 @@ const Timeline: React.FC<TimelineProps> = ({
       </div>
 
       {/* WAVE / SNAKE VIEW (Original SVGs) */}
-      <div className="w-full flex justify-center pt-5 pb-40 relative">
+      <div className="w-full flex justify-center pt-5 pb-40 relative" ref={containerRef}>
         {/* Subtle Stage Background */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 md:w-96 h-32 bg-gradient-to-b from-pink-50/50 to-transparent rounded-full blur-3xl -z-10 pointer-events-none"></div>
         
@@ -571,23 +608,23 @@ const Timeline: React.FC<TimelineProps> = ({
                return (
                  <React.Fragment key={item.id}>
                     {/* Year Marker */}
-                    {isFirstOfYear && (
-                       <motion.div 
-                         initial={{ opacity: 0, scale: 0 }}
-                         whileInView={{ opacity: 1, scale: 1 }}
-                         viewport={{ once: true }}
-                         className="absolute font-black text-pink-500/30 select-none font-pacifico z-0"
-                         style={{ 
-                           top: timelineLayout.snakeMode ? item.y - 40 : item.y - 60, 
-                           left: timelineLayout.snakeMode ? (item.isEvenRow ? 20 : 'auto') : (item.isRightSide ? item.x - 200 : item.x + 50),
-                           right: timelineLayout.snakeMode ? (!item.isEvenRow ? 20 : 'auto') : 'auto',
-                           transform: timelineLayout.snakeMode ? 'none' : 'translateX(-50%)',
-                           fontSize: timelineLayout.snakeMode ? '4rem' : '5rem'
-                         }}
-                       >
-                         {item.timestamp.getFullYear()}
-                       </motion.div>
-                    )}
+                     {isFirstOfYear && (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0 }}
+                          whileInView={{ opacity: 1, scale: 1 }}
+                          viewport={{ once: true }}
+                          className="absolute font-black text-pink-500/10 md:text-pink-500/30 select-none font-pacifico z-0"
+                          style={{ 
+                            top: timelineLayout.snakeMode ? item.y - 40 : item.y - 60, 
+                            left: timelineLayout.snakeMode ? (item.isEvenRow ? 20 : 'auto') : (item.isRightSide ? item.x - 200 : item.x + 50),
+                            right: timelineLayout.snakeMode ? (!item.isEvenRow ? 20 : 'auto') : 'auto',
+                            transform: timelineLayout.snakeMode ? 'none' : 'translateX(-50%)',
+                            fontSize: windowWidth < 640 ? '2.5rem' : (timelineLayout.snakeMode ? '4rem' : '5rem')
+                          }}
+                        >
+                          {item.timestamp.getFullYear()}
+                        </motion.div>
+                     )}
 
                     <motion.div
                       initial={{ opacity: 0, scale: 0.8, y: 20 }}
@@ -648,13 +685,26 @@ const Timeline: React.FC<TimelineProps> = ({
                              })()}
 
                              <div 
-                                className="relative bg-white p-1.5 md:p-2 rounded-sm shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-gray-100 hover:shadow-2xl hover:-translate-y-2 hover:rotate-2 transition-all duration-300 text-center w-24 md:w-36 self-center"
-                                style={{ transform: `scale(${cardScale})`, transformOrigin: 'center' }}
+                                className="relative bg-white p-1.5 md:p-2 rounded-sm shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-gray-100 hover:shadow-2xl hover:-translate-y-2 hover:rotate-2 transition-all duration-300 text-center self-center"
+                                style={{ 
+                                    transform: `scale(${cardScale})`, 
+                                    transformOrigin: 'center',
+                                    width: (item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image').length || (item.media?.type === 'image' ? 1 : 0)) > 0 
+                                        ? `${thumbnailHeight + (windowWidth < 640 ? 12 : 16)}px`
+                                        : (windowWidth < 640 ? '96px' : '144px') // Fallback to w-24/w-36 equivalent
+                                }}
                              >
                              {/* Hero Image Section */}
-                             <div className={`w-full relative overflow-hidden bg-gray-50 rounded-xs ${
-                                (item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image').length || (item.media?.type === 'image' ? 1 : 0)) > 0 ? 'aspect-square mb-2' : 'h-0 mb-0'
-                             }`}>
+                             <div 
+                                className={`w-full aspect-square relative overflow-hidden bg-gray-50 rounded-xs mb-2 ${
+                                    (item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image').length || (item.media?.type === 'image' ? 1 : 0)) > 0 ? '' : 'h-0 mb-0'
+                                }`}
+                                style={{ 
+                                    height: (item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image').length || (item.media?.type === 'image' ? 1 : 0)) > 0 
+                                        ? `${thumbnailHeight}px` 
+                                        : '0px'
+                                }}
+                             >
                                 {/* IMAGE THUMBNAIL - POLAROID MAIN */}
                                  {(() => {
                                    const images = item.mediaItems?.filter((mi: MediaContent) => mi.type === 'image') || (item.media?.type === 'image' ? [item.media] : []);
@@ -721,8 +771,7 @@ const Timeline: React.FC<TimelineProps> = ({
       </div>
 
 
-       {/* EDIT/ADD MODAL */}
-       <AnimatePresence>
+      <AnimatePresence>
         {activeItem && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -736,12 +785,12 @@ const Timeline: React.FC<TimelineProps> = ({
               animate={{ scale: 1, y: 0 }}
               exit={windowWidth < 768 ? { y: "100%" } : { scale: 0.9, y: 20 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className={`bg-white w-full ${windowWidth < 768 ? 'rounded-t-[3rem] h-[85vh]' : 'max-w-md rounded-[4rem] max-h-[90vh]'} shadow-2xl overflow-hidden flex flex-col`}
+              className={`bg-white w-full ${windowWidth < 768 ? 'rounded-t-3xl h-[85vh]' : 'max-w-md rounded-3xl max-h-[90vh]'} shadow-2xl overflow-hidden flex flex-col`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className={`p-6 text-white flex justify-between items-center shrink-0 transition-colors ${
                 isFutureDate ? 'bg-purple-500' : 'bg-pink-500'
-              } ${windowWidth < 768 ? 'rounded-t-[3rem]' : ''}`}>
+              } ${windowWidth < 768 ? 'rounded-t-3xl' : ''}`}>
                 <h3 className="font-pacifico text-2xl">
                   {isNew 
                     ? (isFutureDate ? 'New Plan' : 'New Memory') 
@@ -754,7 +803,7 @@ const Timeline: React.FC<TimelineProps> = ({
               </div>
 
               <div className="p-8 space-y-6 overflow-y-auto">
-                 <div className="bg-gray-50/50 rounded-[2.5rem] p-6 border-2 border-gray-100 flex items-center gap-5">
+                 <div className="bg-gray-50/50 rounded-2xl p-6 border-2 border-gray-100 flex items-center gap-5">
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-sm ${isFutureDate ? 'bg-purple-100 text-purple-600' : 'bg-pink-100 text-pink-600'}`}>
                        <i className="fas fa-calendar-alt"></i>
                     </div>
@@ -763,19 +812,21 @@ const Timeline: React.FC<TimelineProps> = ({
                          {isFutureDate ? 'Event Schedule' : 'Milestone Date & Time'}
                        </label>
                        <div className="flex items-center gap-2">
-                         <DatePicker
-                           selected={activeItem.timestamp}
-                           onChange={(date: Date | null) => date && setActiveItem({ ...activeItem!, timestamp: date })}
-                           showTimeSelect
-                           dateFormat="Pp"
-                           className="bg-transparent border-none font-bold text-gray-700 outline-none p-0 cursor-pointer text-lg focus:ring-0 flex-1"
+                         <input
+                           type="datetime-local"
+                           value={activeItem.timestamp ? new Date(activeItem.timestamp.getTime() - (activeItem.timestamp.getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
+                           onChange={(e) => {
+                              const d = new Date(e.target.value);
+                              if (!isNaN(d.getTime())) setActiveItem({ ...activeItem!, timestamp: d });
+                           }}
+                           className="bg-transparent border-none font-bold text-gray-700 outline-none p-0 cursor-pointer text-base md:text-lg focus:ring-0 flex-1 w-full"
                          />
                           <button 
                             onClick={() => setActiveItem({ ...activeItem!, timestamp: new Date() })}
                            className={`text-[9px] font-black uppercase px-2 py-1 rounded-md border transition-all ${isFutureDate ? 'text-purple-500 border-purple-200 hover:bg-purple-50' : 'text-pink-500 border-pink-200 hover:bg-pink-50'}`}
-                         >
-                           Today
-                         </button>
+                          >
+                           Now
+                          </button>
                        </div>
                        <p className="text-[10px] text-gray-400 font-bold mt-1 pl-1">Choose the exact moment of this memory ✨</p>
                     </div>
@@ -789,7 +840,7 @@ const Timeline: React.FC<TimelineProps> = ({
                         type="text" 
                         value={activeItem.location || ""} 
                         onChange={(e) => setActiveItem({ ...activeItem!, location: e.target.value })}
-                       className={`w-full border-2 rounded-[2rem] p-4 pl-10 text-sm font-bold text-gray-700 outline-none transition-all bg-gray-50/50 ${
+                       className={`w-full border-2 rounded-xl p-4 pl-10 text-sm font-bold text-gray-700 outline-none transition-all bg-gray-50/50 ${
                          isFutureDate ? 'border-purple-50 focus:ring-purple-300' : 'border-pink-50 focus:ring-300'
                        }`}
                        placeholder="Where did it happen?"
@@ -801,67 +852,41 @@ const Timeline: React.FC<TimelineProps> = ({
                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
                      {isFutureDate ? 'Inspiration Attachment' : 'Memory Attachment'}
                    </label>
-                   {/* Replaced !activeItem.media with check for mediaItems length */}
-                   {(!activeItem.mediaItems || activeItem.mediaItems.length === 0) && (
-                     <div className="flex gap-2">
-                         <label className={`flex-1 flex flex-col items-center justify-center py-4 px-2 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer transition-all bg-white group ${isFutureDate ? 'hover:bg-purple-50 hover:border-purple-300' : 'hover:bg-pink-50 hover:border-pink-300'}`}>
-                           <i className={`fas fa-image text-xl mb-1 group-hover:scale-110 transition-transform ${isFutureDate ? 'text-purple-400' : 'text-pink-400'}`}></i>
-                           <span className="text-[8px] font-black text-gray-400 uppercase">Photos</span>
-                           <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, 'image')} />
-                         </label>
- 
-                         <label className="flex-1 flex flex-col items-center justify-center py-4 px-2 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-all bg-white group">
-                           <i className="fas fa-video text-blue-400 text-xl mb-1 group-hover:scale-110 transition-transform"></i>
-                           <span className="text-[8px] font-black text-gray-400 uppercase">Videos</span>
-                           <input type="file" multiple accept="video/*" className="hidden" onChange={(e) => handleFileChange(e, 'video')} />
-                         </label>
-
-                        <button 
-                          onClick={isRecording ? stopRecording : startRecording}
-                          className={`flex-1 flex flex-col items-center justify-center py-4 px-2 border-2 border-dashed rounded-2xl transition-all bg-white group ${
-                            isRecording 
-                              ? 'bg-red-50 border-red-400 animate-pulse' 
-                              : 'border-gray-200 hover:bg-orange-50 hover:border-orange-300'
-                          }`}
+                   
+                   {/* Media List + Add Button */}
+                    <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide py-2">
+                        {activeItem.mediaItems?.map((m, idx) => (
+                           <div key={idx} className="relative group shrink-0">
+                              <div 
+                                className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden border-2 border-gray-50 shadow-sm relative cursor-pointer hover:border-pink-300 transition-colors"
+                                onClick={() => m.type === 'image' && setViewingImage(m.url)}
+                              >
+                                 {m.type === 'image' && <img src={m.url} className="w-full h-full object-cover" />}
+                                 {m.type === 'video' && <div className="w-full h-full flex flex-col items-center justify-center text-xs gap-1 text-gray-500"><i className="fas fa-video text-lg"></i> Video</div>}
+                                 {m.type === 'audio' && <div className="w-full h-full flex flex-col items-center justify-center text-xs gap-1 text-gray-500"><i className="fas fa-microphone text-lg"></i> Audio</div>}
+                              </div>
+                              <button 
+                                onClick={() => removeMedia(idx)}
+                                className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] shadow-md hover:scale-110 transition-transform z-10"
+                              >
+                                <i className="fas fa-times"></i>
+                              </button>
+                           </div>
+                        ))}
+                        
+                        {/* Add Button */}
+                        <button
+                           onClick={() => setIsAddMediaOpen(true)}
+                           className={`w-20 h-20 shrink-0 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all ${
+                              isFutureDate 
+                                 ? 'border-purple-200 bg-purple-50 text-purple-400 hover:bg-purple-100' 
+                                 : 'border-pink-200 bg-pink-50 text-pink-400 hover:bg-pink-100'
+                           }`}
                         >
-                          <i className={`fas ${isRecording ? 'fa-stop text-red-500' : 'fa-microphone text-orange-400'} text-xl mb-1 group-hover:scale-110 transition-transform`}></i>
-                          <span className="text-[8px] font-black text-gray-400 uppercase">{isRecording ? 'Stop' : 'Voice'}</span>
+                           <i className="fas fa-plus text-xl"></i>
+                           <span className="text-[9px] font-black uppercase">Add</span>
                         </button>
-                     </div>
-                   )}
-                    {/* Multiple Media Preview */}
-                    {(activeItem.mediaItems?.length || 0) > 0 && (
-                      <div className="flex flex-col gap-2">
-                        <p className="text-[9px] font-black text-pink-400 uppercase tracking-widest ml-1">Attached Media:</p>
-                        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                          {activeItem.mediaItems?.map((m, idx) => (
-                            <div key={idx} className="relative group shrink-0">
-                               <div 
-                                 className="w-16 h-16 bg-gray-100 rounded-2xl overflow-hidden border-2 border-gray-50 shadow-sm relative cursor-pointer hover:border-pink-300 transition-colors"
-                                 onClick={() => m.type === 'image' && setViewingImage(m.url)}
-                               >
-                                  {m.type === 'image' && <img src={m.url} className="w-full h-full object-cover" />}
-                                  {m.type === 'video' && <div className="w-full h-full flex items-center justify-center text-lg">🎥</div>}
-                                  {m.type === 'audio' && <div className="w-full h-full flex items-center justify-center text-lg">🎤</div>}
-                               </div>
-                               <button 
-                                 onClick={() => removeMedia(idx)}
-                                 className="absolute -top-1 -right-1 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] shadow-md hover:scale-110 transition-transform"
-                               >
-                                 <i className="fas fa-times"></i>
-                               </button>
-                            </div>
-                          ))}
-                          
-                          {/* Quick Add More button inside list */}
-                          <label className={`w-16 h-16 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:bg-pink-50 hover:border-pink-200 transition-all shrink-0`}>
-                             <i className="fas fa-plus text-gray-400 text-xs translate-y-1"></i>
-                             <span className="text-[7px] font-black text-gray-300 uppercase mt-1">Add</span>
-                             <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => handleFileChange(e, 'image')} />
-                          </label>
-                        </div>
-                      </div>
-                    )}
+                    </div>
                 </div>
 
                 <div>
@@ -871,7 +896,7 @@ const Timeline: React.FC<TimelineProps> = ({
                       <textarea 
                         value={activeItem.text || ""} 
                         onChange={(e) => setActiveItem({ ...activeItem!, text: e.target.value })}
-                     className={`w-full h-32 border-2 rounded-[2rem] p-4 text-sm font-bold text-gray-700 outline-none resize-none transition-all bg-gray-50/50 ${
+                     className={`w-full h-32 border-2 rounded-xl p-4 text-sm font-bold text-gray-700 outline-none resize-none transition-all bg-gray-50/50 ${
                         isFutureDate ? 'border-purple-50 focus:ring-purple-300' : 'border-pink-50 focus:ring-pink-300'
                      }`}
                      placeholder={isFutureDate ? "What are we planning to do?" : "What happened on this magical day?"}
@@ -886,7 +911,7 @@ const Timeline: React.FC<TimelineProps> = ({
                           onDeleteInteraction?.(activeItem.id);
                           setActiveItem(null);
                        }}
-                       className="flex-1 py-4 bg-red-50 text-red-500 font-black rounded-[2rem] text-[10px] uppercase tracking-widest hover:bg-red-100 transition-colors"
+                       className="flex-1 py-4 bg-red-50 text-red-500 font-black rounded-xl text-[10px] uppercase tracking-widest hover:bg-red-100 transition-colors"
                      >
                        Delete
                      </button>
@@ -894,7 +919,7 @@ const Timeline: React.FC<TimelineProps> = ({
                    <button 
                      onClick={handleSave}
                      disabled={!activeItem.text.trim()}
-                     className={`flex-[2] py-4 text-white font-black rounded-[2rem] text-[10px] uppercase tracking-widest shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${
+                     className={`flex-[2] py-4 text-white font-black rounded-xl text-[10px] uppercase tracking-widest shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${
                         isFutureDate ? 'bg-purple-500 shadow-purple-200 hover:bg-purple-600' : 'bg-pink-500 shadow-pink-200 hover:bg-pink-600'
                      }`}
                    >
@@ -906,6 +931,58 @@ const Timeline: React.FC<TimelineProps> = ({
                 </div>
               </div>
             </motion.div>
+
+            {/* Media Selection Drawer */}
+            <AnimatePresence>
+               {isAddMediaOpen && (
+                  <motion.div
+                     initial={{ y: "100%" }}
+                     animate={{ y: 0 }}
+                     exit={{ y: "100%" }}
+                     className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-[110] p-6 pb-8 border-t border-gray-100"
+                     onClick={e => e.stopPropagation()}
+                  >
+                     <div className="flex justify-between items-center mb-6">
+                        <h4 className="font-bold text-gray-800">Add Attachment</h4>
+                        <button onClick={() => setIsAddMediaOpen(false)} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200">
+                           <i className="fas fa-times"></i>
+                        </button>
+                     </div>
+                     <div className="grid grid-cols-4 gap-4">
+                        <label className="flex flex-col items-center gap-2 cursor-pointer group">
+                           <div className="w-14 h-14 rounded-2xl bg-pink-50 text-pink-500 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-sm border border-pink-100">
+                              <i className="fas fa-image"></i>
+                           </div>
+                           <span className="text-[10px] font-bold text-gray-500">Image</span>
+                           <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => { handleFileChange(e, 'image'); setIsAddMediaOpen(false); }} />
+                        </label>
+                        
+                        <label className="flex flex-col items-center gap-2 cursor-pointer group">
+                           <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-sm border border-blue-100">
+                              <i className="fas fa-video"></i>
+                           </div>
+                           <span className="text-[10px] font-bold text-gray-500">Video</span>
+                           <input type="file" multiple accept="video/*" className="hidden" onChange={(e) => { handleFileChange(e, 'video'); setIsAddMediaOpen(false); }} />
+                        </label>
+
+                        <button onClick={() => { isRecording ? stopRecording() : startRecording(); setIsAddMediaOpen(false); }} className="flex flex-col items-center gap-2 cursor-pointer group">
+                           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-sm border ${isRecording ? 'bg-red-50 text-red-500 border-red-100 animate-pulse' : 'bg-orange-50 text-orange-500 border-orange-100'}`}>
+                              <i className={`fas ${isRecording ? 'fa-stop' : 'fa-microphone'}`}></i>
+                           </div>
+                           <span className="text-[10px] font-bold text-gray-500">{isRecording ? 'Stop' : 'Voice'}</span>
+                        </button>
+
+                        <label className="flex flex-col items-center gap-2 cursor-pointer group">
+                           <div className="w-14 h-14 rounded-2xl bg-purple-50 text-purple-500 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-sm border border-purple-100">
+                              <i className="fas fa-music"></i>
+                           </div>
+                           <span className="text-[10px] font-bold text-gray-500">Audio</span>
+                           <input type="file" multiple accept="audio/*" className="hidden" onChange={(e) => { handleFileChange(e, 'audio'); setIsAddMediaOpen(false); }} />
+                        </label>
+                     </div>
+                  </motion.div>
+               )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>

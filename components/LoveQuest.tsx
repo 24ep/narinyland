@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GoogleGenAI } from '@google/genai';
 
 interface LoveQuestProps {
   partner1: string;
@@ -40,18 +39,17 @@ const LoveQuest: React.FC<LoveQuestProps> = ({ partner1, partner2, onComplete })
     setIsLocalMode(false);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Generate a single, short, heartwarming 'Daily Love Quest' for a couple named ${partner1} and ${partner2}. 
-        The quest should be a small romantic task they can do together today. 
-        Keep it under 15 words. Include 1 emoji. No extra text or titles.`,
+      const response = await fetch('/api/quest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partner1, partner2 })
       });
 
-      if (response.text) {
-        setQuest(response.text.trim());
+      const data = await response.json();
+      if (data.quest) {
+        setQuest(data.quest);
       } else {
-        throw new Error("Empty response");
+        throw new Error(data.error || "Empty response");
       }
     } catch (error: any) {
       console.warn("Quest generation shifted to Local Mode:", error);
