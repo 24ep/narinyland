@@ -1,12 +1,35 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { uploadMemoryImage } from '@/lib/s3';
+import { redis } from '@/lib/redis';
+
+// Generate ETag for cache validation
+function generateETag(data: any): string {
+  const dataString = JSON.stringify(data);
+  const hash = require('crypto').createHash('md5').update(dataString).digest('hex');
+  return `"${hash}"`;
+}
 
 // GET /api/memories
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const privacy = searchParams.get('privacy');
+
+    // Create cache key based on privacy filter
+    const cacheKey = `memories_${privacy || 'all'}`;
+    
+    // Check cache first
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const parsedData = JSON.parse(cached);
+      return NextResponse.json(parsedData, {
+        headers: {
+          'Cache-Control': 'public, max-age=300, stale-while-revalidate=600',
+          'ETag': generateETag(parsedData),
+        }
+      });
+    }
 
     const where: any = {};
     if (privacy && privacy !== 'all') {
@@ -18,7 +41,15 @@ export async function GET(request: Request) {
       orderBy: { sortOrder: 'asc' },
     });
 
-    return NextResponse.json(memories);
+    // Cache for 5 minutes (300 seconds)
+    await redis.setex(cacheKey, 300, JSON.stringify(memories));
+
+    return NextResponse.json(memories, {
+      headers: {
+        'Cache-Control': 'public, max-age=300, stale-while-revalidate=600',
+        'ETag': generateETag(memories),
+      }
+    });
   } catch (error) {
     console.error('Error fetching memories:', error);
     return NextResponse.json(
@@ -80,6 +111,11 @@ export async function POST(request: Request) {
         sortOrder: newOrder,
       },
     });
+
+    // Invalidate cache for all privacy levels
+    await redis.del('memories_all');
+    await redis.del('memories_public');
+    await redis.del('memories_private');
 
     return NextResponse.json(memory, { status: 201 });
   } catch (error) {

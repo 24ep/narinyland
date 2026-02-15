@@ -78,11 +78,20 @@ export const memoriesAPI = {
     });
   },
 
-  update: (id: string, data: any) =>
-    fetchAPI<any>(`/memories/${id}`, {
+  update: (id: string, data: { url?: string; privacy?: string; caption?: string; file?: File }) => {
+    if (data.file) {
+      const formData = new FormData();
+      formData.append('image', data.file);
+      if (data.url) formData.append('url', data.url);
+      if (data.privacy) formData.append('privacy', data.privacy);
+      if (data.caption) formData.append('caption', data.caption);
+      return fetchFormData<any>(`/memories/${id}`, formData);
+    }
+    return fetchAPI<any>(`/memories/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
   delete: (id: string) =>
     fetchAPI<any>(`/memories/${id}`, { method: 'DELETE' }),
@@ -159,11 +168,20 @@ export const lettersAPI = {
     });
   },
 
-  update: (id: string, data: { folder?: string; isRead?: boolean; readAt?: Date }) =>
-    fetchAPI<any>(`/letters/${id}`, {
+  update: (id: string, data: { folder?: string; isRead?: boolean; readAt?: Date; fromId?: string; content?: string; unlockDate?: string; file?: File }) => {
+    if (data.file) {
+      const formData = new FormData();
+      formData.append('media', data.file);
+      if (data.fromId) formData.append('fromId', data.fromId);
+      if (data.content) formData.append('content', data.content);
+      if (data.unlockDate) formData.append('unlockDate', data.unlockDate);
+      return fetchFormData<any>(`/letters/${id}`, formData);
+    }
+    return fetchAPI<any>(`/letters/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
   markAsRead: (id: string) =>
     fetchAPI<any>(`/letters/${id}/read`, { method: 'PUT' }),

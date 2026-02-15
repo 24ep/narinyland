@@ -4,13 +4,26 @@ import { uploadTimelineMedia } from '@/lib/s3';
 
 import { redis } from '@/lib/redis';
 
+// Generate ETag for cache validation
+function generateETag(data: any): string {
+  const dataString = JSON.stringify(data);
+  const hash = require('crypto').createHash('md5').update(dataString).digest('hex');
+  return `"${hash}"`;
+}
+
 // GET /api/timeline
 export async function GET() {
   try {
     // Check cache first
     const cached = await redis.get('timeline_events');
     if (cached) {
-      return NextResponse.json(JSON.parse(cached));
+      const parsedData = JSON.parse(cached);
+      return NextResponse.json(parsedData, {
+        headers: {
+          'Cache-Control': 'public, max-age=300, stale-while-revalidate=600',
+          'ETag': generateETag(parsedData),
+        }
+      });
     }
 
     const events = await prisma.timelineEvent.findMany({
@@ -34,10 +47,15 @@ export async function GET() {
       };
     });
 
-    // Cache for 60 seconds
-    await redis.setex('timeline_events', 60, JSON.stringify(response));
+    // Cache for 5 minutes (300 seconds)
+    await redis.setex('timeline_events', 300, JSON.stringify(response));
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'public, max-age=300, stale-while-revalidate=600',
+        'ETag': generateETag(response),
+      }
+    });
   } catch (error) {
     console.error('Error fetching timeline:', error);
     return NextResponse.json({ error: 'Failed to fetch timeline' }, { status: 500 });

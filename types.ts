@@ -73,8 +73,10 @@ export interface AppConfig {
   timelineCardScale?: number;
   timelineDefaultRows: number;
   timelineZoomLevel?: number;
-  timelineLayoutMode?: 'wave' | 'snake' | 'vertical';
+  timelineLayoutMode?: 'wave' | 'snake' | 'vertical' | 'gallery';
   timelineThumbnailHeight?: number;
+  showTimelineImagesOnHomepage?: boolean;
+  includeTimelineInGallery?: boolean;
   pwaName?: string;
   pwaShortName?: string;
   pwaDescription?: string;

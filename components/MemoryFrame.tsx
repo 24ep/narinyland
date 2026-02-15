@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MemoryItem } from '../types';
+import { MemoryItem, Interaction } from '../types';
+import OptimizedImage from './OptimizedImage';
 
 interface MemoryFrameProps {
   isVisible: boolean;
@@ -13,6 +14,8 @@ interface MemoryFrameProps {
   viewMode: 'all' | 'public' | 'private';
   onViewModeChange: (mode: 'all' | 'public' | 'private') => void;
   variant?: 'default' | 'sky';
+  timelineItems?: Interaction[]; // New prop for timeline items
+  includeTimelineInGallery?: boolean; // New prop to control inclusion
 }
 
 const MemoryFrame: React.FC<MemoryFrameProps> = ({ 
@@ -23,7 +26,9 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
   username,
   viewMode,
   onViewModeChange,
-  variant = 'default'
+  variant = 'default',
+  timelineItems = [],
+  includeTimelineInGallery = false
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
@@ -48,10 +53,38 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
 
   const isInstagramLink = (url: string) => url.includes('instagram.com') || url.includes('cdninstagram.com');
 
+  // Convert timeline interactions to MemoryItem format
+  const convertTimelineToMemoryItems = (timeline: Interaction[]): MemoryItem[] => {
+    return timeline
+      .filter(interaction => {
+        // Handle both single media and media arrays
+        const mediaItems = interaction.mediaItems || (interaction.media ? [interaction.media] : []);
+        return mediaItems.some((media: any) => media.type === 'image');
+      })
+      .map((interaction, index) => {
+        // Get the first image from the media items
+        const mediaItems = interaction.mediaItems || (interaction.media ? [interaction.media] : []);
+        const firstImage = mediaItems.find((media: any) => media.type === 'image');
+        return {
+          url: firstImage?.url || '',
+          privacy: 'public' as 'public' | 'private', // Default to public for timeline images
+          caption: interaction.text || `Memory ${index + 1}`
+        };
+      })
+      .filter(item => item.url); // Filter out any items without valid image URLs
+  };
+
+  // Combine gallery items and timeline items
+  const allItems = useMemo(() => {
+    const galleryItems = items;
+    const timelineMemoryItems = includeTimelineInGallery ? convertTimelineToMemoryItems(timelineItems) : [];
+    return [...galleryItems, ...timelineMemoryItems];
+  }, [items, timelineItems, includeTimelineInGallery]);
+
   const filteredItems = useMemo(() => {
-    if (viewMode === 'all') return items;
-    return items.filter(item => item.privacy === viewMode);
-  }, [items, viewMode]);
+    if (viewMode === 'all') return allItems;
+    return allItems.filter(item => item.privacy === viewMode);
+  }, [allItems, viewMode]);
 
   useEffect(() => {
     setCurrentIndex(0);
@@ -148,12 +181,12 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
       <>
         {/* Sky Container - Floating Scattered Images */}
         <div className="fixed inset-0 z-20 pointer-events-none overflow-hidden h-[60vh]">
-           {filteredItems.map((item, idx) => {
+           {filteredItems.slice(0, 20).map((item, idx) => {
              const pos = floatingPositions[idx] || { top: '10%', left: '10%', duration: 10, delay: 0, scale: 1 };
              return (
                <motion.div
                  key={`${item.url}-${idx}`}
-                 className="absolute w-24 h-24 md:w-32 md:h-32 pointer-events-auto cursor-zoom-in"
+                 className="absolute w-28 h-28 md:w-32 md:h-32 pointer-events-auto cursor-zoom-in aspect-square"
                  style={{ top: pos.top, left: pos.left }}
                  initial={{ opacity: 0, scale: 0 }}
                  animate={{ 
@@ -172,16 +205,21 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
                  onClick={() => handleZoom(item.url)}
                  whileHover={{ scale: 1.2, zIndex: 50, rotate: 0 }}
                >
-                 <div className="w-full h-full p-2 bg-white/30 backdrop-blur-md rounded-2xl border border-white/40 shadow-lg transform rotate-[-2deg] hover:rotate-0 transition-all duration-300">
-                    <img 
-                      src={getDisplayUrl(item.url)} 
-                      className="w-full h-full object-cover rounded-xl"
-                      alt={`Memory ${idx}`}
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                          e.currentTarget.src = "https://images.unsplash.com/photo-1516589174184-c6848463ea2a?q=80&w=800&auto=format&fit=crop";
-                      }}
-                    />
+                 <div className="w-full h-full p-3 bg-white/40 backdrop-blur-md rounded-2xl border-2 border-white/60 shadow-lg transform rotate-[-2deg] hover:rotate-0 transition-all duration-300 overflow-hidden flex items-center justify-center">
+                    <div className="w-full h-full flex items-center justify-center">
+                      <OptimizedImage 
+                        src={item.url} 
+                        className="w-auto h-auto max-w-full max-h-full object-contain rounded-xl"
+                        alt={`Memory ${idx}`}
+                        priority={idx < 3} // Prioritize first 3 images for sky variant
+                        fallback="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='112' height='112'%3E%3Crect width='112' height='112' fill='%23f3f4f6'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239ca3af' font-size='10'%3EImage%3C/text%3E%3C/svg%3E"
+                        width={112}
+                        height={112}
+                        onError={(e) => {
+                          console.warn(`Failed to load image: ${item.url}`, e);
+                        }}
+                      />
+                    </div>
                  </div>
                </motion.div>
              );
@@ -206,14 +244,12 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
                 className="relative max-w-6xl max-h-[85vh] group"
                 onClick={(e) => e.stopPropagation()}
               >
-                <img 
+                <OptimizedImage 
                   src={zoomedImage} 
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                     e.currentTarget.src = "https://images.unsplash.com/photo-1516589174184-c6848463ea2a?q=80&w=800&auto=format&fit=crop";
-                  }}
                   alt="Zoomed Memory" 
-                  className="w-full h-full object-contain rounded-3xl shadow-[0_0_100px_rgba(236,72,153,0.2)] border-4 border-white/10"
+                  className="w-full h-full object-cover object-center rounded-3xl shadow-[0_0_100px_rgba(236,72,153,0.2)] border-4 border-white/10"
+                  priority={true} // Prioritize zoomed images
+                  fallback="https://images.unsplash.com/photo-1516589174184-c6848463ea2a?q=80&w=800&auto=format&fit=crop"
                 />
               </motion.div>
             </motion.div>
@@ -291,9 +327,9 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={'w-full max-w-md mx-auto'}
+                className={'w-full max-w-[20rem] md:max-w-[24rem] lg:max-w-[28rem] xl:max-w-[32rem] mx-auto'}
               >
-                <div className="relative bg-white p-3 pb-16 shadow-[0_25px_60px_rgba(0,0,0,0.12)] border-8 border-white rounded-sm transform rotate-[-2deg] hover:rotate-0 transition-transform duration-700">
+                <div className="relative bg-white p-2 pb-12 md:p-2.5 pb-14 lg:p-3 pb-16 xl:p-4 pb-20 shadow-[0_35px_80px_rgba(0,0,0,0.15)] border-[8px] md:border-[10px] lg:border-[12px] xl:border-[16px] border-white/90 rounded-xl transform rotate-[-1deg] hover:rotate-0 transition-all duration-700">
                   <div 
                     className="relative w-full aspect-square overflow-hidden bg-gray-50 rounded-sm cursor-zoom-in group"
                     onClick={() => handleZoom(filteredItems[currentIndex].url)}
@@ -374,19 +410,19 @@ const MemoryFrame: React.FC<MemoryFrameProps> = ({
                           key={item.url}
                           layout
                           whileHover={{ scale: 1.05, y: -8 }}
-                          className={`snap-center shrink-0 w-72 md:w-96 bg-white p-3 pb-16 shadow-[0_20px_50px_rgba(0,0,0,0.08)] rounded-[2rem] transition-all cursor-zoom-in relative border-4 border-white group`}
+                          className={`snap-center shrink-0 w-[20rem] md:w-[24rem] lg:w-[28rem] xl:w-[32rem] bg-white p-2 pb-12 md:p-2.5 pb-14 lg:p-3 pb-16 xl:p-4 pb-20 shadow-[0_25px_60px_rgba(0,0,0,0.12)] rounded-[2rem] md:rounded-[2.2rem] lg:rounded-[2.4rem] xl:rounded-[2.5rem] transition-all cursor-zoom-in relative border-[4px] md:border-[8px] lg:border-[12px] xl:border-[16px] border-white/90 group`}
                           onClick={() => handleZoom(item.url)}
                         >
-                           <div className="w-full h-64 md:h-80 overflow-hidden rounded-[1.5rem] bg-gray-50 relative border border-gray-100">
-                              <img 
-                                src={getDisplayUrl(item.url)} 
-                                referrerPolicy="no-referrer"
-                                onError={(e) => {
-                                  e.currentTarget.src = "https://images.unsplash.com/photo-1516589174184-c6848463ea2a?q=80&w=800&auto=format&fit=crop";
-                                }}
-                                alt={`Memory ${idx}`} 
-                                className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" 
-                              />
+                           <div className="w-full h-56 md:h-72 lg:h-80 xl:h-96 overflow-hidden rounded-[1.2rem] md:rounded-[1.4rem] lg:rounded-[1.5rem] xl:rounded-[1.6rem] bg-gray-50 relative border border-gray-100 flex items-center justify-center">
+                              <div className="w-full h-full flex items-center justify-center">
+                                <OptimizedImage 
+                                  src={item.url} 
+                                  alt={`Memory ${idx}`} 
+                                  className="w-auto h-auto max-w-full max-h-full object-contain transition-transform duration-1000 group-hover:scale-110"
+                                  priority={idx < 3} // Prioritize first 3 images in carousel
+                                  fallback="https://images.unsplash.com/photo-1516589174184-c6848463ea2a?q=80&w=800&auto=format&fit=crop"
+                                />
+                              </div>
                               
                               <div className="absolute top-3 left-3 flex gap-2">
                                  {item.privacy === 'private' && (

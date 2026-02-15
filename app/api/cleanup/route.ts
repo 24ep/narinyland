@@ -1,0 +1,325 @@
+import { NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { redis } from '@/lib/redis';
+
+// Helper function to validate image URL
+async function validateImageUrl(url: string | null | undefined): Promise<boolean> {
+  try {
+    if (!url || typeof url !== 'string' || url.trim().length === 0) {
+      return false;
+    }
+
+    // Check URL format
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return false;
+    }
+
+    // Try to fetch the image to check if it's accessible
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+    const response = await fetch(url, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Helper function to validate S3 URL
+function validateS3Url(url: string | null | undefined): boolean {
+  if (!url || typeof url !== 'string') return false;
+  
+  // Basic S3 URL pattern check
+  const s3Patterns = [
+    /s3\.amazonaws\.com/,
+    /\.s3\.amazonaws\.com/,
+    /s3-[^/]+\.amazonaws\.com/,
+    /s3-[^/]+\.amazonaws\.com\.cn/,
+    /storage\.googleapis\.com/,
+    /storage\.googleapis\.com/
+  ];
+  
+  return s3Patterns.some(pattern => pattern.test(url));
+}
+
+// GET /api/cleanup - Analyze broken images
+export async function GET() {
+  try {
+    console.log('🔍 Starting broken image analysis...\n');
+
+    // Get all memories
+    const memories = await prisma.memory.findMany({
+      select: {
+        id: true,
+        url: true,
+        s3Key: true,
+        privacy: true,
+        caption: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    // Get all timeline events with media
+    const timelineEvents = await prisma.timelineEvent.findMany({
+      select: {
+        id: true,
+        mediaUrl: true,
+        mediaS3Key: true,
+        mediaUrls: true,
+        mediaS3Keys: true,
+        text: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    console.log(`📊 Found ${memories.length} memories and ${timelineEvents.length} timeline events\n`);
+
+    // Analyze memories
+    const memoryAnalysis = {
+      total: memories.length,
+      valid: 0,
+      broken: 0,
+      brokenItems: [] as any[]
+    };
+
+    for (const memory of memories) {
+      const isUrlValid = await validateImageUrl(memory.url);
+      const isS3Valid = memory.s3Key ? validateS3Url(memory.s3Key) : true;
+      
+      if (memory.url && isUrlValid && isS3Valid) {
+        memoryAnalysis.valid++;
+      } else {
+        memoryAnalysis.broken++;
+        memoryAnalysis.brokenItems.push({
+          id: memory.id,
+          url: memory.url,
+          s3Key: memory.s3Key,
+          privacy: memory.privacy,
+          caption: memory.caption,
+          issue: !memory.url ? 'Empty URL' : (!isUrlValid ? 'Invalid URL' : (!isS3Valid ? 'Invalid S3 URL' : 'Unknown')),
+          createdAt: memory.createdAt
+        });
+      }
+    }
+
+    // Analyze timeline events
+    const timelineAnalysis = {
+      total: timelineEvents.length,
+      valid: 0,
+      broken: 0,
+      brokenItems: [] as any[]
+    };
+
+    for (const event of timelineEvents) {
+      const allMediaUrls = [event.mediaUrl, ...(event.mediaUrls || [])].filter(Boolean);
+      const allS3Keys = [event.mediaS3Key, ...(event.mediaS3Keys || [])].filter(Boolean);
+      
+      let hasValidMedia = false;
+      let hasBrokenMedia = false;
+      
+      for (const url of allMediaUrls) {
+        const isValid = await validateImageUrl(url);
+        if (isValid) {
+          hasValidMedia = true;
+        } else {
+          hasBrokenMedia = true;
+          break;
+        }
+      }
+      
+      for (const s3Key of allS3Keys) {
+        const isValid = validateS3Url(s3Key);
+        if (!isValid) {
+          hasBrokenMedia = true;
+          break;
+        }
+      }
+      
+      if (allMediaUrls.length === 0) {
+        // No media to check
+        timelineAnalysis.valid++;
+      } else if (hasValidMedia && !hasBrokenMedia) {
+        timelineAnalysis.valid++;
+      } else {
+        timelineAnalysis.broken++;
+        timelineAnalysis.brokenItems.push({
+          id: event.id,
+          mediaUrl: event.mediaUrl,
+          mediaS3Key: event.mediaS3Key,
+          mediaUrls: allMediaUrls,
+          mediaS3Keys: allS3Keys,
+          text: event.text,
+          issue: allMediaUrls.length === 0 ? 'No media' : (hasBrokenMedia ? 'Broken media found' : 'Unknown'),
+          createdAt: event.createdAt
+        });
+      }
+    }
+
+    const totalAnalysis = {
+      memories: memoryAnalysis,
+      timelineEvents: timelineAnalysis,
+      summary: {
+        totalItems: memoryAnalysis.total + timelineAnalysis.total,
+        totalBroken: memoryAnalysis.broken + timelineAnalysis.broken,
+        totalValid: memoryAnalysis.valid + timelineAnalysis.valid
+      }
+    };
+
+    console.log('📊 Analysis Results:');
+    console.log(`   Memories: ${memoryAnalysis.valid} valid, ${memoryAnalysis.broken} broken`);
+    console.log(`   Timeline Events: ${timelineAnalysis.valid} valid, ${timelineAnalysis.broken} broken`);
+    console.log(`   Total: ${totalAnalysis.summary.totalValid} valid, ${totalAnalysis.summary.totalBroken} broken\n`);
+
+    return NextResponse.json(totalAnalysis, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error analyzing broken images:', error);
+    return NextResponse.json(
+      { error: 'Failed to analyze broken images', details: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/cleanup - Clean broken images
+export async function DELETE(request: Request) {
+  try {
+    console.log('🧹 Starting broken image cleanup...\n');
+
+    const body = await request.json();
+    const { dryRun = false, targetTable = 'all' } = body; // 'all', 'memories', 'timeline'
+    
+    console.log(`🔧 Configuration: dryRun=${dryRun}, targetTable=${targetTable}\n`);
+
+    let deletedMemories = 0;
+    let deletedEvents = 0;
+    let errors: string[] = [];
+
+    // Clean memories
+    if (targetTable === 'all' || targetTable === 'memories') {
+      const memories = await prisma.memory.findMany({
+        select: { id: true, url: true, s3Key: true, privacy: true, caption: true, createdAt: true }
+      });
+
+      for (const memory of memories) {
+        const isUrlValid = await validateImageUrl(memory.url);
+        const isS3Valid = memory.s3Key ? validateS3Url(memory.s3Key) : true;
+        
+        if (memory.url && (!isUrlValid || !isS3Valid)) {
+          console.log(`   🗑️ Deleting memory: ${memory.id.substring(0, 8)}... (${memory.url?.substring(0, 50)}...)`);
+          
+          if (!dryRun) {
+            try {
+              await prisma.memory.delete({ where: { id: memory.id } });
+              deletedMemories++;
+            } catch (error) {
+              errors.push(`Failed to delete memory ${memory.id}: ${error}`);
+            }
+          } else {
+            deletedMemories++;
+          }
+        }
+      }
+    }
+
+    // Clean timeline events
+    if (targetTable === 'all' || targetTable === 'timeline') {
+      const events = await prisma.timelineEvent.findMany({
+        select: { id: true, mediaUrl: true, mediaS3Key: true, mediaUrls: true, mediaS3Keys: true, text: true }
+      });
+
+      for (const event of events) {
+        const allMediaUrls = [event.mediaUrl, ...(event.mediaUrls || [])].filter(Boolean);
+        const allS3Keys = [event.mediaS3Key, ...(event.mediaS3Keys || [])].filter(Boolean);
+        
+        let hasValidMedia = false;
+        let hasBrokenMedia = false;
+        
+        // Check all media URLs
+        for (const url of allMediaUrls) {
+          const isValid = await validateImageUrl(url);
+          if (isValid) {
+            hasValidMedia = true;
+          } else {
+            hasBrokenMedia = true;
+            break;
+          }
+        }
+        
+        // Check all S3 keys
+        for (const s3Key of allS3Keys) {
+          const isValid = validateS3Url(s3Key);
+          if (!isValid) {
+            hasBrokenMedia = true;
+            break;
+          }
+        }
+        
+        // Delete if no valid media or has broken media
+        if ((allMediaUrls.length > 0 || allS3Keys.length > 0) && (!hasValidMedia || hasBrokenMedia)) {
+          console.log(`   🗑️ Deleting timeline event: ${event.id.substring(0, 8)}... (${event.text?.substring(0, 50)}...)`);
+          
+          if (!dryRun) {
+            try {
+              await prisma.timelineEvent.delete({ where: { id: event.id } });
+              deletedEvents++;
+            } catch (error) {
+              errors.push(`Failed to delete timeline event ${event.id}: ${error}`);
+            }
+          } else {
+            deletedEvents++;
+          }
+        }
+      }
+    }
+
+    // Clear cache after cleanup
+    if (!dryRun && (deletedMemories > 0 || deletedEvents > 0)) {
+      console.log('🗑️ Clearing cache...\n');
+      await redis.del('memories_all');
+      await redis.del('memories_public');
+      await redis.del('memories_private');
+      await redis.del('timeline_events');
+    }
+
+    const result = {
+      dryRun,
+      deletedMemories,
+      deletedEvents,
+      errors,
+      totalDeleted: deletedMemories + deletedEvents
+    };
+
+    console.log('📊 Cleanup Results:');
+    console.log(`   Deleted ${deletedMemories} memories`);
+    console.log(`   Deleted ${deletedEvents} timeline events`);
+    console.log(`   Total deleted: ${result.totalDeleted} items`);
+    if (errors.length > 0) {
+      console.log('   Errors encountered:');
+      errors.forEach(error => console.log(`     ${error}`));
+    }
+
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error cleaning broken images:', error);
+    return NextResponse.json(
+      { error: 'Failed to clean broken images', details: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
+}

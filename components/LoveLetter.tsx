@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LoveLetterMessage, MediaContent } from '../types';
 import DatePicker from 'react-datepicker';
+import OptimizedImage from './OptimizedImage';
 import "react-datepicker/dist/react-datepicker.css";
 
 interface Partners {
@@ -339,7 +340,7 @@ const LoveLetter: React.FC<LoveLetterProps> = ({
                       <div className="relative bg-white border border-gray-200 rounded-2xl p-3 flex items-center justify-between shadow-sm">
                         <div className="flex items-center gap-4">
                           <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center shadow-inner overflow-hidden border border-gray-100">
-                            {composeMedia.type === 'image' && <img src={composeMedia.url} className="w-full h-full object-cover" />}
+                            {composeMedia.type === 'image' && <OptimizedImage src={composeMedia.url} className="w-full h-full object-cover" alt="Compose media" />}
                             {composeMedia.type === 'video' && <div className="text-2xl">🎥</div>}
                             {composeMedia.type === 'audio' && <div className="text-2xl">🎤</div>}
                           </div>
@@ -480,7 +481,7 @@ const ReadAnimation: React.FC<{ message: LoveLetterMessage; onClose: () => void;
                               className="mb-4 rounded-lg overflow-hidden border-2 border-white shadow-md bg-gray-100"
                             >
                               {message.media.type === 'image' && (
-                                <img src={message.media.url} className="w-full h-auto object-cover max-h-48" alt="Memory" />
+                                <OptimizedImage src={message.media.url} className="w-full h-auto object-cover max-h-48" alt="Memory" />
                               )}
                               {message.media.type === 'video' && (
                                 <video src={message.media.url} controls className="w-full h-auto" />

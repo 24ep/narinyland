@@ -13,7 +13,9 @@ import EditDrawer from '../components/EditDrawer';
 import Logo from '../components/Logo';
 import SimplePlayer from '../components/SimplePlayer';
 import Toast from '../components/Toast';
+import TimelineDebug from '../components/TimelineDebug';
 import TimelineSpreadsheet from '../components/TimelineSpreadsheet';
+import GlobalImageModal from '../components/GlobalImageModal';
 import { Interaction, Emotion, LoveLetterMessage, LoveStats, MemoryItem, AppConfig } from '../types';
 import { configAPI, lettersAPI, timelineAPI, memoriesAPI, statsAPI, couponsAPI } from '../services/api';
 
@@ -72,6 +74,8 @@ const Home: React.FC = () => {
     flowerType: 'cherry',
     mixedFlowers: ['sunflower', 'tulip', 'rose', 'cherry', 'lavender', 'heart'],
     timelineDefaultRows: 5,
+    showTimelineImagesOnHomepage: true,
+    includeTimelineInGallery: true,
     skyMode: "follow_timezone",
     musicPlaylist: ["https://www.youtube.com/watch?v=igx8-BdblEI"],
     proposal: {
@@ -91,6 +95,10 @@ const Home: React.FC = () => {
   const [galleryViewMode, setGalleryViewMode] = useState<'all' | 'public' | 'private'>('all');
   const [activeTab, setActiveTab] = useState<'home' | 'timeline' | 'coupons' | 'letters'>('home'); // Add activeTab state
   const [configLoaded, setConfigLoaded] = useState(false);
+  
+  // Global image modal state
+  const [showGlobalImageModal, setShowGlobalImageModal] = useState(false);
+  const [globalModalImageIndex, setGlobalModalImageIndex] = useState(0);
 
   // ─── Load config & data from database on mount ─────────────────────────────
   useEffect(() => {
@@ -103,7 +111,6 @@ const Home: React.FC = () => {
       e.preventDefault();
       setDeferredPrompt(e);
       setShowInstallPrompt(true);
-      console.log('✅ PWA Install prompt deferred');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -124,11 +131,11 @@ const Home: React.FC = () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User response to install prompt: ${outcome}`);
     setDeferredPrompt(null);
     setShowInstallPrompt(false);
   };
 
+  
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -145,8 +152,6 @@ const Home: React.FC = () => {
           memoriesAPI.list().catch(() => []),
           statsAPI.get().catch(() => ({ xp: 0, level: 1, leaves: 0, points: 0 }))
         ]);
-
-        console.log('✅ Data loaded from backend');
 
         // Transform Timeline Data
         const mappedTimeline = timelineData.map((t: any) => ({
@@ -175,11 +180,13 @@ const Home: React.FC = () => {
           petType: serverConfig.petType || prev.petType,
           pets: serverConfig.pets || prev.pets,
           timelineDefaultRows: serverConfig.timelineDefaultRows ?? prev.timelineDefaultRows,
+          showTimelineImagesOnHomepage: serverConfig.showTimelineImagesOnHomepage ?? prev.showTimelineImagesOnHomepage,
+          includeTimelineInGallery: serverConfig.includeTimelineInGallery ?? prev.includeTimelineInGallery,
           musicPlaylist: serverConfig.musicPlaylist || prev.musicPlaylist,
           proposal: serverConfig.proposal || prev.proposal,
           partners: serverConfig.partners || prev.partners,
           gallery: memories.length ? memories.map((m: any) => ({ url: m.url, privacy: m.privacy, caption: m.caption })) : prev.gallery,
-          timeline: mappedTimeline.length ? mappedTimeline : prev.timeline,
+          timeline: mappedTimeline, // Always use mappedTimeline from API
           coupons: serverConfig.coupons?.length ? serverConfig.coupons : prev.coupons,
         }));
 
@@ -234,6 +241,8 @@ const Home: React.FC = () => {
         petType: next.petType,
         pets: next.pets,
         timelineDefaultRows: next.timelineDefaultRows,
+        showTimelineImagesOnHomepage: next.showTimelineImagesOnHomepage,
+        includeTimelineInGallery: next.includeTimelineInGallery,
         musicPlaylist: next.musicPlaylist,
         proposal: next.proposal,
         isProposalAccepted: next.proposal.isAccepted,
@@ -241,7 +250,7 @@ const Home: React.FC = () => {
         partners: next.partners,
         coupons: next.coupons,
         gallery: next.gallery,
-      }).then(() => console.log('💾 Config saved to database'))
+      }).then(() => {})
         .catch((err: any) => console.error('❌ Failed to save config:', err.message));
       return next;
     });
@@ -352,7 +361,6 @@ const Home: React.FC = () => {
       ...prev,
       proposal: { ...prev.proposal, isAccepted: true }
     }));
-    console.log('💍 Proposal state saved');
   };
 
 
@@ -644,12 +652,49 @@ const Home: React.FC = () => {
     return interactions;
   }, [appConfig.timeline, appConfig.coupons, appConfig.showCouponsOnTimeline]);
 
-  const handleTimelineConfigUpdate = (updates: { layoutMode?: 'vertical' | 'wave' | 'snake', zoomLevel?: number }) => {
+  const handleTimelineConfigUpdate = (updates: { layoutMode?: 'vertical' | 'wave' | 'snake' | 'gallery', zoomLevel?: number }) => {
     handleSetAppConfig(prev => ({
       ...prev,
       timelineLayoutMode: updates.layoutMode || prev.timelineLayoutMode,
       timelineZoomLevel: updates.zoomLevel !== undefined ? updates.zoomLevel : prev.timelineZoomLevel
     }));
+  };
+
+  // Global image modal functions
+  const handleGlobalModalPrevious = () => {
+    const allImages = [];
+    appConfig.timeline.forEach(interaction => {
+      if (interaction.media) {
+        const mediaItems = Array.isArray(interaction.media) ? interaction.media : [interaction.media];
+        mediaItems.forEach((media: any) => {
+          if (media.type === 'image') {
+            allImages.push(media.url);
+          }
+        });
+      }
+    });
+    
+    if (allImages.length === 0) return;
+    const newIndex = globalModalImageIndex === 0 ? allImages.length - 1 : globalModalImageIndex - 1;
+    setGlobalModalImageIndex(newIndex);
+  };
+
+  const handleGlobalModalNext = () => {
+    const allImages = [];
+    appConfig.timeline.forEach(interaction => {
+      if (interaction.media) {
+        const mediaItems = Array.isArray(interaction.media) ? interaction.media : [interaction.media];
+        mediaItems.forEach((media: any) => {
+          if (media.type === 'image') {
+            allImages.push(media.url);
+          }
+        });
+      }
+    });
+    
+    if (allImages.length === 0) return;
+    const newIndex = (globalModalImageIndex + 1) % allImages.length;
+    setGlobalModalImageIndex(newIndex);
   };
 
   const daysTogether = Math.max(0, Math.floor((new Date().getTime() - new Date(appConfig.anniversaryDate).getTime()) / (1000 * 60 * 60 * 24)));
@@ -716,7 +761,10 @@ const Home: React.FC = () => {
                     viewMode={galleryViewMode}
                     onViewModeChange={setGalleryViewMode}
                     variant="sky"
+                    timelineItems={appConfig.timeline}
+                    includeTimelineInGallery={appConfig.includeTimelineInGallery}
                  />
+                 
                  {/* Spacer for Home view scrolling if needed */}
                  <div className="h-24"></div> 
                </motion.div>
@@ -744,6 +792,10 @@ const Home: React.FC = () => {
                     thumbnailHeight={appConfig.timelineThumbnailHeight}
                     onOpenSettings={() => setIsEditDrawerOpen(true)}
                     onUpdateConfig={handleTimelineConfigUpdate}
+                    showImageModal={showGlobalImageModal}
+                    onSetShowImageModal={setShowGlobalImageModal}
+                    modalImageIndex={globalModalImageIndex}
+                    onSetModalImageIndex={setGlobalModalImageIndex}
                  />
                 </motion.div>
              )}
@@ -945,7 +997,8 @@ const Home: React.FC = () => {
           )}
 
           {/* Logo - Fixed Top Left on Desktop, Centered on Mobile */}
-          <div className="fixed top-4 md:top-6 left-1/2 md:left-6 transform -translate-x-1/2 md:translate-x-0 z-50">
+          <div className="fixed top-4 md:top-6 left-1/2 md:left-6 transform -translate-x-1/2 md:translate-x-0 flex items-center justify-center"
+             style={{ zIndex: 'var(--z-index-fixed)' }}>
             <Logo 
               size={isMobile ? 80 : 120} 
               title={appConfig.appName} 
@@ -1180,6 +1233,15 @@ const Home: React.FC = () => {
             interactions={appConfig.timeline}
             onSave={handleMassTimelineUpdate}
             onDelete={handleDeleteTimeline}
+          />
+          
+          <GlobalImageModal
+            show={showGlobalImageModal}
+            onClose={() => setShowGlobalImageModal(false)}
+            interactions={appConfig.timeline}
+            currentIndex={globalModalImageIndex}
+            onPrevious={handleGlobalModalPrevious}
+            onNext={handleGlobalModalNext}
           />
         </>
       )}

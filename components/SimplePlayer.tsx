@@ -56,7 +56,6 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
         // Only restore if valid index
         if (index >= 0 && index < playlist.length) {
           setCurrentTrackIndex(index);
-          console.log('🎵 Resuming music from track', index);
         }
       }
     } catch (e) {
@@ -99,7 +98,6 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
            const data = JSON.parse(event.data);
            // info: 0 means ENDED
            if (data.event === 'onStateChange' && data.info === 0) {
-              console.log('🎵 Track ended, playing next...');
               nextTrack();
            }
          } catch (e) { /* ignore */ }
@@ -135,7 +133,6 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
   // Initial interaction handler for autoplay compliance
   useEffect(() => {
     const handleInteraction = () => {
-      console.log("User interaction detected, attempting to play music unmuted...");
       setMuted(false);
       setPlaying(true);
       
@@ -162,7 +159,8 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
   if (!videoId) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2">
+    <div className="fixed bottom-4 left-4 flex items-center gap-2"
+         style={{ zIndex: 'var(--z-index-fixed)' }}>
       {/* Hidden IFrame for Music */}
       <div style={{ position: 'fixed', top: -9999, opacity: 0.001, pointerEvents: 'none' }}>
         <iframe
@@ -178,7 +176,8 @@ const SimplePlayer: React.FC<SimplePlayerProps> = ({
         ></iframe>
       </div>
 
-      {error && <span className="fixed bottom-4 left-4 z-50 text-red-500 text-xs font-bold px-2 bg-white rounded-full py-1 shadow-md">Error: {error}</span>}
+      {error && <span className="fixed bottom-4 left-4 text-red-500 text-xs font-bold px-2 bg-white rounded-full py-1 shadow-md"
+                style={{ zIndex: 'var(--z-index-fixed)' }}>Error: {error}</span>}
     </div>
   );
 };

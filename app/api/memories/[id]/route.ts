@@ -1,8 +1,59 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { deleteFile } from '@/lib/s3';
+import { deleteFile, uploadMemoryImage } from '@/lib/s3';
 
-// PUT /api/memories/[id]
+// POST /api/memories/[id] - for FormData uploads (image updates)
+export async function POST(
+  request: Request,
+  props: { params: Promise<{ id: string }> }
+) {
+  try {
+    const params = await props.params;
+    const id = params.id;
+    
+    const formData = await request.formData();
+    const file = formData.get('image') as File | null;
+    const url = formData.get('url') as string | null;
+    const privacy = (formData.get('privacy') as string) || 'public';
+    const caption = formData.get('caption') as string | null;
+
+    const updateData: any = {};
+    if (privacy !== undefined) updateData.privacy = privacy;
+    if (caption !== undefined) updateData.caption = caption;
+    if (url !== undefined) updateData.url = url;
+
+    // Handle file upload
+    if (file) {
+      console.log('📸 Uploading new image for memory update');
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const result = await uploadMemoryImage(
+        buffer,
+        file.name,
+        file.type
+      );
+      updateData.url = result.url;
+      updateData.s3Key = result.key;
+      
+      // Delete old S3 file if exists
+      const oldMemory = await prisma.memory.findUnique({ where: { id } });
+      if (oldMemory?.s3Key) {
+        await deleteFile(oldMemory.s3Key).catch(e => console.error('Failed to delete old S3 file:', e));
+      }
+    }
+
+    const memory = await prisma.memory.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return NextResponse.json(memory);
+  } catch (error) {
+    console.error('Error updating memory with FormData:', error);
+    return NextResponse.json({ error: 'Failed to update memory' }, { status: 500 });
+  }
+}
+
+// PUT /api/memories/[id] - for JSON updates
 export async function PUT(
   request: Request,
   props: { params: Promise<{ id: string }> }
