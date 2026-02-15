@@ -835,8 +835,8 @@ const Flower = ({ type, position, scale = 1, windFactor = 1, quality = 'medium' 
 
                                      {/* Flower Head */}
                                      <group position={[0, 0.65, 0.05]} rotation={[0.4, 0, 0]}>
-                                        <mesh position={[0, 0, -0.02]}>
-                                            <cylinderGeometry args={[0.03, 0.02, 0.05, 8]} rotation={[Math.PI/2, 0, 0]} />
+                                        <mesh position={[0, 0, -0.02]} rotation={[Math.PI/2, 0, 0]}>
+                                            <cylinderGeometry args={[0.03, 0.02, 0.05, 8]} />
                                             <meshStandardMaterial color={stemColor} />
                                         </mesh>
                                         
